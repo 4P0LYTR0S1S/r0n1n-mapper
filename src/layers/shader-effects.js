@@ -22,6 +22,7 @@ const COMMON = `
   uniform float u_high;
   uniform float u_env;
   uniform float u_beat;
+  uniform float u_bpm;
 `;
 
 const VERT = `

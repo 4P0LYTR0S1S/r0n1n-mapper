@@ -2,6 +2,14 @@
 
 All notable changes to r0n1n-mapper. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning is [SemVer](https://semver.org/) with calver-style date stamps for pre-1.0 milestones.
 
+## [Unreleased]
+
+### Added — FL Studio integration (toward v0.2)
+
+- **MIDI Clock auto-BPM** — parse 0xF8 / 0xFA / 0xFC system real-time messages, derive stable BPM via 48-sample rolling average over 24 PPQN pulses. When FL Studio (or any external transport) sends Master Sync, `u_bpm` locks to the sequencer; tap-tempo remains the fallback when no clock is present.
+- `u_bpm` exposed in `shader-layer` uniform contract so custom shader effects can build beat-aligned modulation.
+- `docs/FL-STUDIO-SETUP.md` — end-to-end integration guide covering three parallel channels (MIDI CC for params, MIDI Clock for sync, audio loopback for FFT) with per-OS instructions (Windows loopMIDI + VB-Audio CABLE, macOS IAC + BlackHole, Linux ALSA virmidi + PulseAudio null-sink), Patcher template idea, latency budget, and recording strategies.
+
 ## [0.1.0] — 2026-05-18
 
 Initial public release. Full Pro-v1 feature set per the M0–M5 build plan.

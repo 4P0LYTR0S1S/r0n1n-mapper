@@ -15,7 +15,9 @@ import { initAudio, tap as tapTempo } from './audio/analyser.js';
 import { createAudioState } from './audio/uniforms.js';
 import { emptySnapshot, captureSnapshot, applySnapshot } from './project/snapshots.js';
 import { emptyCue, createCueEngine } from './project/cues.js';
-import { initMidi, midiInputs, setHandler, touchParam, startLearn, isLearning, cancelLearn, createDispatcher } from './input/midi.js';
+import { initMidi, midiInputs, setHandler, touchParam, startLearn, isLearning, cancelLearn, createDispatcher, clockBpm, clockRunning } from './input/midi.js';
+// Expose clockBpm to the audio module so its computeBpm prefers MIDI Clock when live.
+window.__r0n1n_midi = { clockBpm, clockRunning };
 import { connect as oscConnect, disconnect as oscDisconnect, setStatusListener as setOscStatus, startOscLearn, isOscLearning, cancelOscLearn } from './input/osc.js';
 import { createRecorder } from './io/recorder.js';
 import { parseCube, uploadLutTexture } from './grade/lut.js';

@@ -50,10 +50,52 @@ export function startLearn(cb) {
 export function isLearning() { return learnPending; }
 export function cancelLearn() { learnPending = false; learnCallback = null; }
 
+// ---- MIDI Clock (FL Studio / Ableton-style transport sync) ----
+// 0xF8 = Timing Clock (24 PPQN), 0xFA = Start, 0xFB = Continue, 0xFC = Stop.
+//
+// We average the last N pulse intervals to derive stable BPM. Math:
+//   pulses-per-beat = 24, so BPM = 60_000 / (avg_pulse_interval_ms * 24).
+//
+// Exposed as `clockBpm()` + `clockRunning()`. Drop-in for the AnalyserNode's
+// tap-tempo: prefer clock BPM when available, fall back to tap.
+const CLOCK_WINDOW = 48;          // 2 beats of pulses → smooth BPM
+const clockIntervals = [];
+let lastClockT = 0;
+let clockStarted = false;
+
+export function handleClockByte(status) {
+  if (status === 0xfa) { clockStarted = true; clockIntervals.length = 0; lastClockT = 0; return; }
+  if (status === 0xfc) { clockStarted = false; return; }
+  // 0xfb (Continue) = keep going
+  if (status !== 0xf8) return;
+  const now = performance.now();
+  if (lastClockT > 0) {
+    const dt = now - lastClockT;
+    if (dt > 1 && dt < 200) {  // sanity gate (4 BPM to 50000 BPM)
+      clockIntervals.push(dt);
+      if (clockIntervals.length > CLOCK_WINDOW) clockIntervals.shift();
+    }
+  }
+  lastClockT = now;
+}
+
+export function clockBpm() {
+  if (clockIntervals.length < 6) return 0;
+  let acc = 0;
+  for (const v of clockIntervals) acc += v;
+  const avg = acc / clockIntervals.length;
+  return Math.round(60000 / (avg * 24));
+}
+
+export function clockRunning() { return clockStarted; }
+
 // Parse a MIDI message into { type, channel, ccOrNote, value } or null if it's
-// a system/realtime message we don't bind to.
+// a system/realtime message we don't bind to. Clock messages route to the
+// handleClockByte() side-channel before reaching the dispatcher.
 export function parseMessage(ev) {
   const [status, d1, d2] = ev.data;
+  // System real-time (0xF8–0xFF) — single byte, no channel
+  if (status >= 0xf8) { handleClockByte(status); return null; }
   const type = status & 0xf0;
   const channel = status & 0x0f;
   if (type === 0xb0) return { type: 'cc',    channel, cc: d1, value: d2 };

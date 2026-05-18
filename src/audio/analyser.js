@@ -118,6 +118,16 @@ export function tap() {
 }
 
 function computeBpm() {
+  // Prefer MIDI Clock when an external transport is feeding us (FL Studio /
+  // Ableton via virtual MIDI port). Fall back to tap-tempo otherwise.
+  try {
+    // Lazy import so analyser.js stays decoupled from MIDI when MIDI isn't enabled.
+    const { clockBpm } = (window.__r0n1n_midi ??= {});
+    if (typeof clockBpm === 'function') {
+      const b = clockBpm();
+      if (b > 0) return b;
+    }
+  } catch {}
   if (taps.length < 2) return 0;
   let acc = 0;
   for (let i = 1; i < taps.length; i++) acc += taps[i] - taps[i - 1];

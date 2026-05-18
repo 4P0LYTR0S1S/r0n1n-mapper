@@ -37,6 +37,7 @@ export function attachShader(regl, layer, audioState) {
     u_high: () => audioState?.uniforms?.high ?? 0,
     u_env:  () => audioState?.uniforms?.env  ?? 0,
     u_beat: () => audioState?.uniforms?.beat ?? 0,
+    u_bpm:  () => audioState?.uniforms?.bpm  ?? 0,
     u_fft:  () => audioState?.fftTexture ?? regl.texture({ width: 1, height: 1, format: 'luminance', type: 'uint8' }),
   };
   for (const s of meta.schema) {
