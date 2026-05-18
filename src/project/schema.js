@@ -1,0 +1,168 @@
+// Project JSON schema. Bump SCHEMA_VERSION on every breaking shape change and
+// add an entry to MIGRATIONS so old project files keep loading.
+
+import { defaultMeshPoints, DEFAULT_GRID_X, DEFAULT_GRID_Y } from '../surface/warp-mesh.js';
+import { defaultKey } from '../keyer/keyer-glsl.js';
+
+export const SCHEMA_VERSION = 5;
+
+export function emptyProject() {
+  return {
+    version: SCHEMA_VERSION,
+    name: 'untitled',
+    output: { width: 1920, height: 1080 },
+    ui: { selectedSurfaceId: null, selectedLayerId: null, mode: 'edit' },
+    surfaces: [],
+    layers: [],
+    snapshots: [],   // [{ id, name, savedAt, state }]
+    cues: [],        // [{ id, snapshotId, crossfadeMs }]
+    midi: { bindings: [], deviceId: null },
+    osc:  { bindings: [], url: 'ws://127.0.0.1:8787' },
+  };
+}
+
+export function emptySurface(id, layerId) {
+  return {
+    id,
+    name: 'surface',
+    z: 0,
+    visible: true,
+    opacity: 1.0,
+    blendMode: 'normal',
+    layerIds: layerId ? [layerId] : [],
+    grade: { lutId: null, intensity: 1.0 },
+    warp: {
+      mode: 'quad',  // 'quad' | 'mesh'
+      perspective: {
+        corners: [[-0.6, -0.6], [0.6, -0.6], [0.6, 0.6], [-0.6, 0.6]],
+      },
+      mesh: {
+        gridX: DEFAULT_GRID_X,
+        gridY: DEFAULT_GRID_Y,
+        points: defaultMeshPoints(),
+      },
+    },
+  };
+}
+
+export function emptyVideoLayer(id) {
+  return {
+    id,
+    type: 'video',
+    name: 'video',
+    enabled: true,
+    opacity: 1.0,
+    blendMode: 'normal',
+    videoId: null,
+    loop: true,
+    muted: true,
+    speed: 1.0,
+    key: defaultKey(),
+  };
+}
+
+export function emptyWebcamLayer(id) {
+  return {
+    id,
+    type: 'webcam',
+    name: 'webcam',
+    enabled: true,
+    opacity: 1.0,
+    blendMode: 'normal',
+    deviceId: null,
+    key: defaultKey(),
+  };
+}
+
+export function emptyImageLayer(id) {
+  return {
+    id,
+    type: 'image',
+    name: 'image',
+    enabled: true,
+    opacity: 1.0,
+    blendMode: 'normal',
+    imageId: null,
+  };
+}
+
+export function emptySolidLayer(id, color = [1, 0, 0.5, 1]) {
+  return {
+    id,
+    type: 'solid',
+    name: 'solid',
+    enabled: true,
+    opacity: 1.0,
+    blendMode: 'normal',
+    color,
+  };
+}
+
+const MIGRATIONS = {
+  0: (proj) => {
+    // v0 → v1: surfaces gain `layerIds: [singleLayer]` and `warp.mesh`. Per-layer
+    // opacity/blendMode added.
+    const out = { ...proj, version: 1 };
+    out.ui = { ...(proj.ui ?? {}), selectedLayerId: null };
+    out.surfaces = (proj.surfaces ?? []).map(s => ({
+      ...s,
+      layerIds: s.layerIds ?? (s.layerId ? [s.layerId] : []),
+      warp: {
+        ...(s.warp ?? {}),
+        mode: s.warp?.mode ?? 'quad',
+        perspective: s.warp?.perspective ?? { corners: [[-0.6,-0.6],[0.6,-0.6],[0.6,0.6],[-0.6,0.6]] },
+        mesh: s.warp?.mesh ?? { gridX: DEFAULT_GRID_X, gridY: DEFAULT_GRID_Y, points: defaultMeshPoints() },
+      },
+    }));
+    out.layers = (proj.layers ?? []).map(l => ({ opacity: 1.0, blendMode: 'normal', ...l }));
+    return out;
+  },
+  1: (proj) => {
+    // v1 → v2: video/webcam layers gain a `key: { mode, color, low, high, spill }` block.
+    const out = { ...proj, version: 2 };
+    out.layers = (proj.layers ?? []).map(l => {
+      if (l.type === 'video' || l.type === 'webcam') {
+        return { ...l, key: l.key ?? defaultKey() };
+      }
+      return l;
+    });
+    return out;
+  },
+  2: (proj) => {
+    // v2 → v3: snapshots, cues, midi bindings added.
+    return {
+      ...proj,
+      version: 3,
+      snapshots: proj.snapshots ?? [],
+      cues: proj.cues ?? [],
+      midi: proj.midi ?? { bindings: [], deviceId: null },
+    };
+  },
+  3: (proj) => {
+    // v3 → v4: per-surface grade block (3D LUT + intensity).
+    const out = { ...proj, version: 4 };
+    out.surfaces = (proj.surfaces ?? []).map(s => ({
+      ...s,
+      grade: s.grade ?? { lutId: null, intensity: 1.0 },
+    }));
+    return out;
+  },
+  4: (proj) => {
+    // v4 → v5: OSC bindings table.
+    return {
+      ...proj,
+      version: 5,
+      osc: proj.osc ?? { bindings: [], url: 'ws://127.0.0.1:8787' },
+    };
+  },
+};
+
+export function migrate(proj) {
+  let p = proj;
+  while ((p.version ?? 0) < SCHEMA_VERSION) {
+    const m = MIGRATIONS[p.version ?? 0];
+    if (!m) throw new Error(`no migration from schema v${p.version} to v${SCHEMA_VERSION}`);
+    p = m(p);
+  }
+  return p;
+}

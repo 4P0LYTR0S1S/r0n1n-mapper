@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Spike E — Catmull-Rom CP crossing</title>
+<link rel="stylesheet" href="_spike.css" />
+</head>
+<body>
+<nav><a href="../index.html">← back</a></nav>
+<h1>Spike E — Catmull-Rom mesh stability at degenerate control points</h1>
+<p class="dim">
+  Drag any control point. Try to <strong>cross two points through each other</strong>.
+  Compare the three clamp strategies. Pick the one that stays finite + visually plausible.
+</p>
+
+<div class="row">
+  <div class="col">
+    <h2>none — raw Catmull-Rom (reference)</h2>
+    <canvas id="c-none" width="320" height="240"></canvas>
+  </div>
+  <div class="col">
+    <h2>convex-hull clamp</h2>
+    <canvas id="c-hull" width="320" height="240"></canvas>
+  </div>
+  <div class="col">
+    <h2>ε-pushback (min separation)</h2>
+    <canvas id="c-eps" width="320" height="240"></canvas>
+  </div>
+</div>
+
+<div class="verdict">
+  Drag the points on the leftmost canvas — all three sync. The "none" canvas may blow up; the
+  others should remain finite. Record which is preferable in <code>docs/SPIKES.md</code>.
+</div>
+
+<script>
+const GX = 3, GY = 3;
+const SEG = 12;
+
+function makeGrid(w, h) {
+  const pts = [];
+  for (let j=0; j<GY; j++) for (let i=0; i<GX; i++) {
+    pts.push({ x: 30 + i*(w-60)/(GX-1), y: 30 + j*(h-60)/(GY-1) });
+  }
+  return pts;
+}
+
+// Centripetal Catmull-Rom across grid lines (per row + per col, then bilerp). Cheap, works.
+function catmullRom1D(p0, p1, p2, p3, t) {
+  const t2 = t*t, t3 = t2*t;
+  return 0.5 * ((2*p1) + (-p0 + p2)*t + (2*p0 - 5*p1 + 4*p2 - p3)*t2 + (-p0 + 3*p1 - 3*p2 + p3)*t3);
+}
+
+function getCP(pts, i, j) {
+  const ii = Math.max(0, Math.min(GX-1, i));
+  const jj = Math.max(0, Math.min(GY-1, j));
+  return pts[jj*GX + ii];
+}
+
+function interp(pts, u, v) {
+  const fx = u * (GX-1);
+  const fy = v * (GY-1);
+  const i0 = Math.floor(fx);
+  const j0 = Math.floor(fy);
+  const tx = fx - i0;
+  const ty = fy - j0;
+
+  // Sample 4x4 neighborhood for bicubic Catmull-Rom
+  let xRows = [], yRows = [];
+  for (let dj=-1; dj<=2; dj++) {
+    const j = j0 + dj;
+    const p0 = getCP(pts, i0-1, j);
+    const p1 = getCP(pts, i0,   j);
+    const p2 = getCP(pts, i0+1, j);
+    const p3 = getCP(pts, i0+2, j);
+    xRows.push(catmullRom1D(p0.x, p1.x, p2.x, p3.x, tx));
+    yRows.push(catmullRom1D(p0.y, p1.y, p2.y, p3.y, tx));
+  }
+  const x = catmullRom1D(xRows[0], xRows[1], xRows[2], xRows[3], ty);
+  const y = catmullRom1D(yRows[0], yRows[1], yRows[2], yRows[3], ty);
+  return [x, y];
+}
+
+function clampHull(pts, refPts, w, h) {
+  // Project each CP into the convex hull of its 8 neighbors' positions or page bounds.
+  // Cheap proxy: clamp into page rect.
+  return pts.map((p, idx) => ({
+    x: Math.max(0, Math.min(w, p.x)),
+    y: Math.max(0, Math.min(h, p.y))
+  }));
+}
+
+function clampEps(pts, eps=8) {
+  // Ensure min separation between neighbors in row + col.
+  const out = pts.map(p => ({ x: p.x, y: p.y }));
+  for (let j=0; j<GY; j++) for (let i=0; i<GX-1; i++) {
+    const a = out[j*GX+i], b = out[j*GX+i+1];
+    if (b.x - a.x < eps) { const m = (a.x + b.x)/2; a.x = m - eps/2; b.x = m + eps/2; }
+  }
+  for (let i=0; i<GX; i++) for (let j=0; j<GY-1; j++) {
+    const a = out[j*GX+i], b = out[(j+1)*GX+i];
+    if (b.y - a.y < eps) { const m = (a.y + b.y)/2; a.y = m - eps/2; b.y = m + eps/2; }
+  }
+  return out;
+}
+
+function draw(canvas, pts) {
+  const w = canvas.width, h = canvas.height;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0,0,w,h);
+
+  // Render a grid of interp points
+  ctx.strokeStyle = '#00ffd1';
+  ctx.lineWidth = 1;
+  for (let j=0; j<=SEG*(GY-1); j++) {
+    ctx.beginPath();
+    for (let i=0; i<=SEG*(GX-1); i++) {
+      const u = i / (SEG*(GX-1));
+      const v = j / (SEG*(GY-1));
+      const [x,y] = interp(pts, u, v);
+      if (!isFinite(x) || !isFinite(y)) continue;
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+  for (let i=0; i<=SEG*(GX-1); i++) {
+    ctx.beginPath();
+    for (let j=0; j<=SEG*(GY-1); j++) {
+      const u = i / (SEG*(GX-1));
+      const v = j / (SEG*(GY-1));
+      const [x,y] = interp(pts, u, v);
+      if (!isFinite(x) || !isFinite(y)) continue;
+      if (j === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+
+  // Control points
+  ctx.fillStyle = '#ff4060';
+  for (const p of pts) {
+    ctx.beginPath(); ctx.arc(p.x, p.y, 5, 0, Math.PI*2); ctx.fill();
+  }
+}
+
+const c1 = document.getElementById('c-none');
+const c2 = document.getElementById('c-hull');
+const c3 = document.getElementById('c-eps');
+let pts = makeGrid(c1.width, c1.height);
+let dragIdx = -1;
+
+c1.onmousedown = (e) => {
+  const r = c1.getBoundingClientRect();
+  const mx = e.clientX - r.left, my = e.clientY - r.top;
+  let best = -1, bestD = 16;
+  for (let i=0; i<pts.length; i++) {
+    const d = Math.hypot(pts[i].x-mx, pts[i].y-my);
+    if (d < bestD) { bestD = d; best = i; }
+  }
+  dragIdx = best;
+};
+window.onmouseup = () => dragIdx = -1;
+window.onmousemove = (e) => {
+  if (dragIdx < 0) return;
+  const r = c1.getBoundingClientRect();
+  pts[dragIdx].x = e.clientX - r.left;
+  pts[dragIdx].y = e.clientY - r.top;
+  render();
+};
+
+function render() {
+  draw(c1, pts);
+  draw(c2, clampHull(pts, pts, c2.width, c2.height));
+  draw(c3, clampEps(pts));
+}
+render();
+</script>
+</body>
+</html>

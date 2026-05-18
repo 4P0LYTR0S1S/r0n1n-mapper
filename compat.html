@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>r0n1n // mapper — browser compat check</title>
+<style>
+  :root { --bg:#07070a; --panel:#101015; --line:#1a1a22; --ink:#d7d7df; --dim:#7a7a86;
+          --pass:#00ffd1; --warn:#ffb84d; --fail:#ff4060; }
+  html, body { margin:0; min-height:100%; background:var(--bg); color:var(--ink);
+    font: 13px/1.5 ui-monospace, "JetBrains Mono", Menlo, monospace; }
+  .wrap { max-width: 760px; margin: 40px auto; padding: 16px; }
+  h1 { color: var(--pass); letter-spacing: 0.05em; margin: 0 0 4px; }
+  h1 span { color: var(--ink); }
+  p.dim { color: var(--dim); margin: 4px 0 24px; }
+  table { width: 100%; border-collapse: collapse; margin: 8px 0; }
+  th, td { padding: 8px 12px; border: 1px solid var(--line); text-align: left; vertical-align: top; }
+  th { background: var(--panel); color: var(--dim); font-weight: normal;
+       font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; }
+  td.status { width: 90px; font-weight: 700; }
+  td.pass { color: var(--pass); }
+  td.warn { color: var(--warn); }
+  td.fail { color: var(--fail); }
+  td.note { color: var(--dim); }
+  a { color: var(--pass); }
+  .verdict { margin-top: 24px; padding: 12px 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 4px; }
+  .verdict.pass { border-color: var(--pass); }
+  .verdict.warn { border-color: var(--warn); }
+  .verdict.fail { border-color: var(--fail); }
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>r0n1n <span>// mapper</span> · compatibility</h1>
+<p class="dim">Click-free check. Run this once to confirm your browser can drive the mapper.</p>
+
+<table>
+  <tr><th>capability</th><th>status</th><th>notes</th></tr>
+  <tbody id="rows"></tbody>
+</table>
+
+<div class="verdict" id="verdict"></div>
+
+<p class="dim">Back to <a href="index.html">editor</a>.</p>
+</div>
+
+<script type="module">
+const rows = document.getElementById('rows');
+const verdictEl = document.getElementById('verdict');
+
+const REQUIRED = [];
+const STRETCH  = [];
+
+function add(name, level, status, note = '') {
+  const target = level === 'required' ? REQUIRED : STRETCH;
+  target.push({ name, status, note });
+}
+
+// --- checks ---
+add('WebGL2', 'required', !!document.createElement('canvas').getContext('webgl2'), 'mandatory for the render pipeline');
+const _gl = document.createElement('canvas').getContext('webgl2') || document.createElement('canvas').getContext('webgl');
+add('WebGL renderer', 'required', !!_gl, _gl ? _gl.getParameter(_gl.RENDERER) || '' : 'no WebGL available');
+add('regl import (esm.sh)', 'required', 'pending', 'fetches at runtime — confirmed by editor boot');
+
+add('IndexedDB', 'required', !!window.indexedDB, 'video / image / LUT persistence');
+add('BroadcastChannel', 'required', !!window.BroadcastChannel, 'editor ↔ output tab sync');
+add('Fullscreen API', 'required', !!document.documentElement.requestFullscreen, 'F key in output');
+add('MediaRecorder', 'required', !!window.MediaRecorder, 'output recording');
+add('getUserMedia', 'required', !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia), 'webcam + audio FFT');
+
+add('WebGPU',  'stretch', 'pending', 'ML matting (post-v0.1.0, optional)');
+add('WebMIDI', 'stretch', !!navigator.requestMIDIAccess, 'MIDI Learn + CC bindings');
+add('WebCodecs', 'stretch', !!window.VideoFrame, 'WebCodecs VideoFrame upload (fallback if texImage2D bottlenecks)');
+add('HEVC playback', 'stretch', 'pending', 'check via MediaSource isTypeSupported');
+add('VP9-alpha playback', 'stretch', 'pending', 'pre-keyed VJ clip workflow');
+add('captureStream', 'stretch', !!HTMLCanvasElement.prototype.captureStream, 'hydra sampling + recording');
+
+// async resolve the "pending" cells
+(async () => {
+  // WebGPU
+  let webgpu = false;
+  if ('gpu' in navigator) {
+    try { const a = await navigator.gpu.requestAdapter(); webgpu = !!a; } catch {}
+  }
+  patch('WebGPU', webgpu);
+
+  // HEVC (media element + MSE)
+  patch('HEVC playback',
+    MediaSource.isTypeSupported && MediaSource.isTypeSupported('video/mp4; codecs="hvc1"'));
+
+  // VP9 alpha
+  patch('VP9-alpha playback',
+    MediaSource.isTypeSupported && MediaSource.isTypeSupported('video/webm; codecs="vp9"'));
+
+  // esm.sh reachability — fetch a tiny module
+  try {
+    await fetch('https://esm.sh/regl@2.1.0?bundle', { method: 'HEAD', mode: 'no-cors' });
+    patch('regl import (esm.sh)', true);
+  } catch { patch('regl import (esm.sh)', false); }
+
+  // WebGL renderer details
+  if (_gl) {
+    const ext = _gl.getExtension('WEBGL_debug_renderer_info');
+    if (ext) {
+      const r = _gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) || '';
+      const note = `${_gl.getParameter(_gl.VERSION)} · ${r}`;
+      patchNote('WebGL renderer', note);
+    }
+  }
+
+  render();
+})();
+
+function patch(name, val) {
+  for (const grp of [REQUIRED, STRETCH]) {
+    const row = grp.find(r => r.name === name);
+    if (row) row.status = val;
+  }
+}
+function patchNote(name, note) {
+  for (const grp of [REQUIRED, STRETCH]) {
+    const row = grp.find(r => r.name === name);
+    if (row) row.note = note;
+  }
+}
+
+function render() {
+  rows.innerHTML = '';
+  const sections = [['required', REQUIRED], ['stretch', STRETCH]];
+  for (const [label, list] of sections) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<th colspan="3">${label}</th>`;
+    rows.appendChild(tr);
+    for (const r of list) {
+      const tr = document.createElement('tr');
+      const status = r.status === true ? 'PASS' : r.status === false ? 'FAIL' : '…';
+      const cls = r.status === true ? 'pass' : r.status === false ? (label === 'stretch' ? 'warn' : 'fail') : 'note';
+      tr.innerHTML = `<td>${r.name}</td><td class="status ${cls}">${status}</td><td class="note">${r.note}</td>`;
+      rows.appendChild(tr);
+    }
+  }
+
+  const reqFails = REQUIRED.filter(r => r.status === false);
+  const strFails = STRETCH.filter(r => r.status === false);
+  if (reqFails.length === 0 && strFails.length === 0) {
+    verdictEl.className = 'verdict pass';
+    verdictEl.textContent = '✓ All checks passed. Mapper should run cleanly in this browser.';
+  } else if (reqFails.length === 0) {
+    verdictEl.className = 'verdict warn';
+    verdictEl.textContent = `Required checks pass. ${strFails.length} stretch feature(s) unavailable — some features will be degraded (see notes).`;
+  } else {
+    verdictEl.className = 'verdict fail';
+    verdictEl.textContent = `${reqFails.length} required check(s) failed: ${reqFails.map(r => r.name).join(', ')}. The editor will not run reliably until these are resolved.`;
+  }
+}
+render();
+</script>
+</body>
+</html>

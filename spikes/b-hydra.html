@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Spike B — hydra-synth embed</title>
+<link rel="stylesheet" href="_spike.css" />
+</head>
+<body>
+<nav><a href="../index.html">← back</a></nav>
+<h1>Spike B — hydra-synth embed → regl texture</h1>
+<p class="dim">
+  Embed hydra-synth in a hidden canvas. Sample its output into a regl 2D texture and draw it to the target canvas.
+  PASS = sustains ≥58 fps with hydra running and verifiable visual on the target canvas.
+</p>
+
+<button id="run">init hydra + sample loop</button>
+<div class="row" style="margin-top:12px;">
+  <div class="col">
+    <p>hydra source canvas</p>
+    <canvas id="hydra-canvas" width="640" height="360"></canvas>
+  </div>
+  <div class="col">
+    <p>regl target (sampling hydra)</p>
+    <canvas id="target" width="640" height="360"></canvas>
+  </div>
+</div>
+
+<table>
+  <tr><th>fps</th><th>tex upload ms (last)</th><th>hydra canvas dims</th><th>verdict</th></tr>
+  <tr>
+    <td class="metric" id="b-fps">—</td>
+    <td class="metric" id="b-tex">—</td>
+    <td class="metric" id="b-dims">—</td>
+    <td id="b-verdict">—</td>
+  </tr>
+</table>
+
+<div class="verdict" id="notes">
+  If this fails: try <code>captureStream()</code> → <code>HTMLVideoElement</code> → <code>texImage2D</code> as fallback path.
+  Document which works in <code>docs/SPIKES.md</code>.
+</div>
+
+<script type="module">
+document.getElementById('run').onclick = async () => {
+  const button = document.getElementById('run');
+  button.disabled = true;
+  button.textContent = 'loading hydra…';
+
+  // Load hydra-synth
+  const Hydra = (await import('https://esm.sh/hydra-synth@1.3.29?bundle')).default;
+  const hCanvas = document.getElementById('hydra-canvas');
+  const hydra = new Hydra({ canvas: hCanvas, detectAudio: false, makeGlobal: false });
+  const h = hydra.synth;
+  h.osc(20, 0.1, 0.8).rotate(0.1).modulate(h.noise(3, 0.5)).out();
+  button.textContent = 'hydra running. sampling…';
+
+  // Load regl
+  const createREGL = (await import('https://esm.sh/regl@2.1.0?bundle')).default;
+  const target = document.getElementById('target');
+  const regl = createREGL({ canvas: target });
+
+  const tex = regl.texture({ width: hCanvas.width, height: hCanvas.height, min: 'linear', mag: 'linear' });
+  const draw = regl({
+    vert: `attribute vec2 p; varying vec2 uv; void main(){ uv = p*0.5+0.5; gl_Position = vec4(p, 0, 1); }`,
+    frag: `precision mediump float; uniform sampler2D s; varying vec2 uv; void main(){ gl_FragColor = texture2D(s, vec2(uv.x, 1.0-uv.y)); }`,
+    attributes: { p: [[-1,-1],[1,-1],[-1,1],[1,1]] },
+    uniforms: { s: regl.prop('s') },
+    primitive: 'triangle strip', count: 4
+  });
+
+  let frames = 0, last = performance.now(), fps = 0;
+  let lastTexMs = 0;
+  function loop(){
+    frames++; const now = performance.now();
+    if (now-last >= 500){ fps = frames*1000/(now-last); frames = 0; last = now;
+      document.getElementById('b-fps').textContent = fps.toFixed(0);
+      document.getElementById('b-tex').textContent = lastTexMs.toFixed(2);
+      document.getElementById('b-dims').textContent = `${hCanvas.width}×${hCanvas.height}`;
+      const v = document.getElementById('b-verdict');
+      if (fps >= 58){ v.textContent='PASS'; v.className='pass'; }
+      else if (fps >= 30){ v.textContent='MARGINAL'; v.className='warn'; }
+      else { v.textContent='FAIL'; v.className='fail'; }
+    }
+
+    // Re-upload hydra canvas to regl texture
+    const t0 = performance.now();
+    tex({ data: hCanvas });
+    lastTexMs = performance.now() - t0;
+
+    regl.poll(); regl.clear({color:[0,0,0,1]});
+    draw({ s: tex });
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+};
+</script>
+</body>
+</html>

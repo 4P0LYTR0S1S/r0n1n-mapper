@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Spike A — child</title>
+<link rel="stylesheet" href="_spike.css" />
+</head>
+<body>
+<h1 id="title">Spike A — child</h1>
+<p class="dim" id="mode-info">…</p>
+<canvas id="view" width="640" height="360"></canvas>
+
+<script type="module">
+const params = new URLSearchParams(location.search);
+const mode = params.get('mode') || 'bc';
+const channel = new BroadcastChannel('spike-a-' + mode);
+const canvas = document.getElementById('view');
+document.getElementById('title').textContent = `Spike A — child (mode: ${mode})`;
+document.getElementById('mode-info').textContent = mode === 'bc'
+  ? 'BroadcastChannel: receive state, render locally (independent regl).'
+  : 'Bitmap-ship: receive ImageBitmap each frame, paint via ImageBitmapRenderingContext.';
+
+let frames = 0, lastFps = performance.now(), fps = 0;
+let msgsRx = 0, lastRate = performance.now(), rate = 0;
+
+if (mode === 'bc') {
+  // independent regl render
+  const createREGL = (await import('https://esm.sh/regl@2.1.0?bundle')).default;
+  const regl = createREGL({ canvas });
+  const draw = regl({
+    vert: `attribute vec2 p; uniform vec2 o; void main(){ gl_Position = vec4(p*0.25 + o, 0, 1); }`,
+    frag: `precision mediump float; uniform float t; void main(){ gl_FragColor = vec4(0.0, 1.0, 0.82*(0.5+0.5*sin(t*2.0)), 1.0); }`,
+    attributes: { p: [[-1,-1],[1,-1],[-1,1],[1,1]] },
+    uniforms: { o: regl.prop('o'), t: regl.prop('t') },
+    primitive: 'triangle strip', count: 4
+  });
+  let state = { o:[0,0], t:0 };
+  channel.onmessage = (e) => {
+    msgsRx++;
+    if (e.data.type === 'state') state = e.data;
+    if (e.data.type === 'ping') channel.postMessage({ type:'pong', tParent: e.data.tParent });
+  };
+  function loop(){
+    frames++; const now = performance.now();
+    if (now - lastFps >= 500){ fps = frames*1000/(now-lastFps); frames=0; lastFps=now; channel.postMessage({type:'child-fps', fps}); }
+    if (now - lastRate >= 1000){ rate = msgsRx*1000/(now-lastRate); msgsRx=0; lastRate=now; channel.postMessage({type:'child-msgrx', rate}); }
+    regl.poll(); regl.clear({color:[0,0,0,1]});
+    draw({ o: state.o, t: state.t });
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+
+} else {
+  // bitmap-ship: just paint received bitmaps
+  const ctx = canvas.getContext('bitmaprenderer');
+  let pending = null;
+  channel.onmessage = (e) => {
+    msgsRx++;
+    if (e.data.type === 'frame') {
+      if (pending) pending.close();
+      pending = e.data.bitmap;
+    }
+    if (e.data.type === 'ping') channel.postMessage({ type:'pong', tParent: e.data.tParent });
+  };
+  function loop(){
+    frames++; const now = performance.now();
+    if (now - lastFps >= 500){ fps = frames*1000/(now-lastFps); frames=0; lastFps=now; channel.postMessage({type:'child-fps', fps}); }
+    if (now - lastRate >= 1000){ rate = msgsRx*1000/(now-lastRate); msgsRx=0; lastRate=now; channel.postMessage({type:'child-rxrate', rate}); }
+    if (pending) {
+      ctx.transferFromImageBitmap(pending);
+      pending = null;
+    }
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+}
+</script>
+</body>
+</html>

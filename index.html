@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>r0n1n // mapper — editor</title>
+<link rel="stylesheet" href="assets/styles.css" />
+<script type="importmap">
+{
+  "imports": {
+    "regl": "https://esm.sh/regl@2.1.0?bundle"
+  }
+}
+</script>
+</head>
+<body data-tab="editor">
+
+<header id="topbar">
+  <div class="brand">r0n1n <span>// mapper</span></div>
+  <div class="actions">
+    <button id="btn-add-surface">+ surface</button>
+    <button id="btn-output">open output</button>
+    <button id="btn-save">save</button>
+    <button id="btn-load">load</button>
+    <button id="btn-export">export</button>
+    <input id="import-file" type="file" accept=".json" hidden />
+    <button id="btn-record" class="record">● rec</button>
+    <button id="btn-enable-audio">🎤 audio</button>
+    <span class="status">
+      <span id="fps">fps —</span>
+      <span id="bpm">bpm —</span>
+      <span id="sync-state">sync —</span>
+    </span>
+  </div>
+</header>
+
+<aside id="panel">
+  <section>
+    <h3>surfaces</h3>
+    <ul id="surface-list"></ul>
+    <p class="dim" id="empty-hint">drop an MP4 anywhere, or click <strong>+ surface</strong>.</p>
+  </section>
+
+  <section id="surface-props" hidden>
+    <h3>surface</h3>
+    <label>name <input id="prop-name" type="text" /></label>
+    <label>mode
+      <select id="prop-mode">
+        <option value="quad">quad (4 corners)</option>
+        <option value="mesh">mesh (Catmull-Rom)</option>
+      </select>
+    </label>
+    <div id="mesh-controls" hidden>
+      <label>grid X <input id="prop-gridx" type="number" min="2" max="20" value="5" /></label>
+      <label>grid Y <input id="prop-gridy" type="number" min="2" max="20" value="4" /></label>
+      <button id="btn-reset-mesh">reset mesh</button>
+    </div>
+    <h4>3d LUT</h4>
+    <div id="grade-controls">
+      <select id="prop-lut"><option value="">— no LUT —</option></select>
+      <label>intensity <input id="prop-lut-intensity" type="range" min="0" max="1" step="0.01" value="1" /></label>
+      <div class="row">
+        <button id="btn-load-lut">load .cube</button>
+        <button id="btn-clear-lut">clear</button>
+      </div>
+      <input id="file-lut" type="file" accept=".cube" hidden />
+    </div>
+    <label>opacity <input id="prop-opacity" type="range" min="0" max="1" step="0.01" value="1" /></label>
+    <label>z-order <input id="prop-z" type="number" step="1" value="0" /></label>
+    <label><input id="prop-visible" type="checkbox" checked /> visible</label>
+    <div class="row">
+      <button id="btn-reset-warp">reset quad</button>
+      <button id="btn-delete-surface" class="danger">delete surface</button>
+    </div>
+
+    <h4>layer stack <span class="dim">(top renders last)</span></h4>
+    <ul id="layer-stack"></ul>
+    <div class="row">
+      <button id="btn-add-video">+ video</button>
+      <button id="btn-add-image">+ image</button>
+      <button id="btn-add-solid">+ color</button>
+      <button id="btn-add-webcam">+ webcam</button>
+    </div>
+    <div class="row">
+      <button id="btn-add-shader">+ shader</button>
+      <select id="shader-effect"></select>
+      <button id="btn-add-hydra">+ hydra</button>
+    </div>
+  </section>
+
+  <section>
+    <h3>snapshots</h3>
+    <div id="snapshot-grid"></div>
+    <p class="dim">click = recall · shift-click = save · alt-click = clear</p>
+  </section>
+
+  <section>
+    <h3>cues</h3>
+    <ul id="cue-list"></ul>
+    <div class="row">
+      <button id="btn-cue-add">+ from current snapshot</button>
+    </div>
+    <div class="row">
+      <button id="btn-cue-prev">◀ prev</button>
+      <button id="btn-cue-next">next ▶</button>
+      <span id="cue-status" class="dim">idle</span>
+    </div>
+  </section>
+
+  <section>
+    <h3>midi</h3>
+    <div class="row">
+      <button id="btn-enable-midi">enable midi</button>
+      <button id="btn-midi-learn">learn</button>
+    </div>
+    <select id="midi-device" hidden></select>
+    <ul id="midi-bindings"></ul>
+  </section>
+
+  <section>
+    <h3>osc</h3>
+    <div class="row">
+      <button id="btn-connect-osc">connect bridge</button>
+      <button id="btn-osc-learn">learn</button>
+    </div>
+    <p class="dim" id="osc-status">disconnected · run <code>node osc-bridge/server.mjs</code></p>
+    <ul id="osc-bindings"></ul>
+  </section>
+
+  <section>
+    <h3>spikes</h3>
+    <ul class="links">
+      <li><a href="spikes/a-sync.html">A — sync</a></li>
+      <li><a href="spikes/b-hydra.html">B — hydra</a></li>
+      <li><a href="spikes/c-rvm.html">C — RVM</a></li>
+      <li><a href="spikes/d-video.html">D — video upload</a></li>
+      <li><a href="spikes/e-catmull.html">E — Catmull-Rom</a></li>
+    </ul>
+  </section>
+</aside>
+
+<main id="stage">
+  <canvas id="view"></canvas>
+  <div id="drop-hint">drop file to add to selected surface</div>
+</main>
+
+<input id="file-video"  type="file" accept="video/mp4,video/webm" hidden />
+<input id="file-image"  type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden />
+
+<script type="module" src="src/main-editor.js"></script>
+</body>
+</html>

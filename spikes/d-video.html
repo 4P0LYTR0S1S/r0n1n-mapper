@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Spike D — multi-HD video upload</title>
+<link rel="stylesheet" href="_spike.css" />
+</head>
+<body>
+<nav><a href="../index.html">← back</a></nav>
+<h1>Spike D — 4× 1080p video → regl texture per frame</h1>
+<p class="dim">
+  Drop in up to 4 MP4 files (any res, 1080p preferred). Each becomes a regl texture re-uploaded per frame.
+  PASS = sustains ≥58 fps. If marginal/fail, M2 switches to WebCodecs <code>VideoFrame</code> direct upload.
+</p>
+
+<input type="file" id="files" accept="video/mp4,video/webm" multiple />
+<button id="start" disabled>start</button>
+
+<div class="row" id="thumbs" style="margin-top:12px;"></div>
+
+<table>
+  <tr><th>videos loaded</th><th>fps</th><th>avg upload ms/frame (all)</th><th>verdict</th></tr>
+  <tr>
+    <td class="metric" id="d-count">0</td>
+    <td class="metric" id="d-fps">—</td>
+    <td class="metric" id="d-ms">—</td>
+    <td id="d-verdict">—</td>
+  </tr>
+</table>
+
+<canvas id="composite" width="1280" height="720"></canvas>
+
+<script type="module">
+const createREGL = (await import('https://esm.sh/regl@2.1.0?bundle')).default;
+
+const files = document.getElementById('files');
+const startBtn = document.getElementById('start');
+const thumbsEl = document.getElementById('thumbs');
+const videos = [];
+
+files.onchange = () => {
+  videos.length = 0;
+  thumbsEl.innerHTML = '';
+  const list = [...files.files].slice(0, 4);
+  for (const f of list) {
+    const v = document.createElement('video');
+    v.src = URL.createObjectURL(f);
+    v.muted = true; v.loop = true; v.playsInline = true; v.autoplay = true;
+    v.style.width = '160px'; v.style.border = '1px solid #1a1a22';
+    thumbsEl.appendChild(v);
+    videos.push(v);
+  }
+  document.getElementById('d-count').textContent = videos.length;
+  startBtn.disabled = videos.length === 0;
+};
+
+startBtn.onclick = async () => {
+  await Promise.all(videos.map(v => v.play().catch(()=>{})));
+  const canvas = document.getElementById('composite');
+  const regl = createREGL({ canvas });
+  const texes = videos.map(v => regl.texture({ data: v, min:'linear', mag:'linear' }));
+
+  const draw = regl({
+    vert: `attribute vec2 p; uniform vec2 off, scale; varying vec2 uv; void main(){ uv = p*0.5+0.5; gl_Position = vec4(p*scale + off, 0, 1); }`,
+    frag: `precision mediump float; uniform sampler2D s; varying vec2 uv; void main(){ gl_FragColor = texture2D(s, vec2(uv.x, 1.0-uv.y)); }`,
+    attributes: { p: [[-1,-1],[1,-1],[-1,1],[1,1]] },
+    uniforms: { s: regl.prop('s'), off: regl.prop('off'), scale: regl.prop('scale') },
+    primitive: 'triangle strip', count: 4
+  });
+
+  const offs = [[-0.5,-0.5],[0.5,-0.5],[-0.5,0.5],[0.5,0.5]];
+  let frames = 0, last = performance.now(), fps = 0;
+  let msAccum = 0, msSamples = 0;
+
+  function loop(){
+    const t0 = performance.now();
+    for (let i=0; i<videos.length; i++) texes[i]({ data: videos[i] });
+    const dt = performance.now() - t0;
+    msAccum += dt; msSamples++;
+
+    regl.poll(); regl.clear({color:[0.04,0.04,0.05,1]});
+    for (let i=0; i<videos.length; i++) draw({ s: texes[i], off: offs[i], scale: [0.5, 0.5] });
+
+    frames++; const now = performance.now();
+    if (now-last >= 500){
+      fps = frames*1000/(now-last); frames = 0; last = now;
+      const avgMs = msAccum / Math.max(1, msSamples); msAccum = 0; msSamples = 0;
+      document.getElementById('d-fps').textContent = fps.toFixed(0);
+      document.getElementById('d-ms').textContent = avgMs.toFixed(2);
+      const v = document.getElementById('d-verdict');
+      if (fps >= 58 && avgMs < 12){ v.textContent='PASS'; v.className='pass'; }
+      else if (fps >= 30){ v.textContent='MARGINAL — consider WebCodecs'; v.className='warn'; }
+      else { v.textContent='FAIL — WebCodecs path required'; v.className='fail'; }
+    }
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+};
+</script>
+</body>
+</html>

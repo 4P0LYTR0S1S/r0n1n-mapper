@@ -1,0 +1,22 @@
+{
+  "name": "r0n1n-mapper-osc-bridge",
+  "version": "0.1.0",
+  "description": "Localhost OSC↔WebSocket bridge for r0n1n-mapper",
+  "type": "module",
+  "main": "server.mjs",
+  "bin": {
+    "r0n1n-osc-bridge": "./server.mjs"
+  },
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "dependencies": {
+    "osc-min": "^1.1.2",
+    "ws": "^8.18.0"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "AGPL-3.0-or-later",
+  "author": "4P0LYTR0S1S collective"
+}

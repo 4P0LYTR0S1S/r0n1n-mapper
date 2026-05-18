@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Spike A — editor/output sync</title>
+<link rel="stylesheet" href="_spike.css" />
+</head>
+<body>
+<nav><a href="../index.html">← back</a></nav>
+<h1>Spike A — editor ↔ output sync</h1>
+<p class="dim">
+  Two candidate sync mechanisms for the editor/output tab pair. Open each child window,
+  let it run ~30 s, watch the FPS &amp; latency rows below. <span class="pass">PASS</span>
+  = sustains ≥58 fps and median latency &lt; 16 ms. The plan's M0 decision gate.
+</p>
+
+<h2>Method 1 — BroadcastChannel + independent regl context per tab</h2>
+<p class="dim">Parent sends state deltas. Child renders its own copy.</p>
+<button id="open-bc">open BroadcastChannel child</button>
+<table>
+  <tr><th>FPS (parent)</th><th>FPS (child, reported)</th><th>msgs/s seen</th><th>median latency ms</th><th>verdict</th></tr>
+  <tr id="row-bc">
+    <td class="metric" id="bc-parent-fps">—</td>
+    <td class="metric" id="bc-child-fps">—</td>
+    <td class="metric" id="bc-msgs">—</td>
+    <td class="metric" id="bc-latency">—</td>
+    <td id="bc-verdict">—</td>
+  </tr>
+</table>
+
+<h2>Method 2 — Parent renders, ships ImageBitmap to child</h2>
+<p class="dim">Parent renders its own regl scene, calls <code>transferToImageBitmap()</code>, postMessages it to child each frame. Child draws via <code>ImageBitmapRenderingContext</code>.</p>
+<button id="open-bm">open Bitmap-shipping child</button>
+<table>
+  <tr><th>FPS (parent render)</th><th>FPS (child paint)</th><th>bitmaps/s seen</th><th>median latency ms</th><th>verdict</th></tr>
+  <tr id="row-bm">
+    <td class="metric" id="bm-parent-fps">—</td>
+    <td class="metric" id="bm-child-fps">—</td>
+    <td class="metric" id="bm-bps">—</td>
+    <td class="metric" id="bm-latency">—</td>
+    <td id="bm-verdict">—</td>
+  </tr>
+</table>
+
+<h2>Parent preview</h2>
+<canvas id="parent" width="640" height="360"></canvas>
+
+<div class="verdict" id="overall">
+  Decision rubric: pick the method that holds 58+ fps with &lt;16 ms latency. If both pass,
+  prefer <strong>BroadcastChannel</strong> for code simplicity and independent video decode.
+  If BC drops frames but Bitmap-ship holds, pick Bitmap-ship.
+</div>
+
+<script type="module">
+import createREGL from 'https://esm.sh/regl@2.1.0?bundle';
+
+const canvas = document.getElementById('parent');
+const regl = createREGL({ canvas });
+
+const drawRect = regl({
+  vert: `attribute vec2 p; uniform vec2 o; void main(){ gl_Position = vec4(p*0.25 + o, 0, 1); }`,
+  frag: `precision mediump float; uniform float t; void main(){ gl_FragColor = vec4(0.0, 1.0, 0.82*(0.5+0.5*sin(t*2.0)), 1.0); }`,
+  attributes: { p: [[-1,-1],[1,-1],[-1,1],[1,1]] },
+  uniforms: { o: regl.prop('o'), t: regl.prop('t') },
+  primitive: 'triangle strip', count: 4
+});
+
+// Method 1 — BroadcastChannel
+const bc = new BroadcastChannel('spike-a-bc');
+const bcLatencies = [];
+let bcChildFps = 0;
+let bcMsgPerSec = 0; let bcMsgCount = 0; let bcLastSecond = performance.now();
+bc.onmessage = (e) => {
+  if (e.data.type === 'pong') bcLatencies.push(performance.now() - e.data.tParent);
+  if (e.data.type === 'child-fps') bcChildFps = e.data.fps;
+  if (e.data.type === 'child-msgrx') bcMsgPerSec = e.data.rate;
+};
+document.getElementById('open-bc').onclick = () => window.open('a-sync-child.html?mode=bc', 'spike-bc');
+
+// Method 2 — bitmap shipping. Parent draws to an offscreen-ish canvas (its own), bitmaps to child via channel
+const bmCh = new BroadcastChannel('spike-a-bm');
+const bmLatencies = [];
+let bmChildFps = 0;
+let bmBpsCount = 0; let bmBpsRate = 0;
+bmCh.onmessage = (e) => {
+  if (e.data.type === 'pong') bmLatencies.push(performance.now() - e.data.tParent);
+  if (e.data.type === 'child-fps') bmChildFps = e.data.fps;
+  if (e.data.type === 'child-rxrate') bmBpsRate = e.data.rate;
+};
+document.getElementById('open-bm').onclick = () => window.open('a-sync-child.html?mode=bm', 'spike-bm');
+
+// FPS meters
+let parentLast = performance.now(), frames = 0, parentFps = 0;
+function tickFps(){ frames++; const now = performance.now(); if (now-parentLast >= 500){ parentFps = frames*1000/(now-parentLast); frames = 0; parentLast = now; } }
+
+let t = 0;
+let lastTime = performance.now();
+function loop() {
+  const now = performance.now();
+  const dt = (now - lastTime)/1000; lastTime = now; t += dt; tickFps();
+  regl.poll(); regl.clear({ color:[0.04,0.04,0.05,1] });
+  const ox = Math.cos(t*0.7)*0.7, oy = Math.sin(t*0.9)*0.6;
+  drawRect({ o:[ox,oy], t });
+
+  // BC method: send state + ping each frame
+  bc.postMessage({ type:'state', o:[ox,oy], t, tParent: now });
+  bc.postMessage({ type:'ping', tParent: now });
+
+  // Bitmap method: snapshot canvas → ImageBitmap → ship
+  createImageBitmap(canvas).then((bmp) => {
+    bmCh.postMessage({ type:'frame', bitmap: bmp, tParent: now }, [bmp]);
+  });
+  bmCh.postMessage({ type:'ping', tParent: now });
+
+  // Throttle reporting
+  if (Math.floor(t*4) % 4 === 0) {
+    document.getElementById('bc-parent-fps').textContent = parentFps.toFixed(0);
+    document.getElementById('bc-child-fps').textContent = bcChildFps.toFixed(0);
+    document.getElementById('bc-msgs').textContent = bcMsgPerSec.toFixed(0);
+    document.getElementById('bc-latency').textContent = median(bcLatencies).toFixed(1);
+    verdict('bc', bcChildFps, median(bcLatencies));
+
+    document.getElementById('bm-parent-fps').textContent = parentFps.toFixed(0);
+    document.getElementById('bm-child-fps').textContent = bmChildFps.toFixed(0);
+    document.getElementById('bm-bps').textContent = bmBpsRate.toFixed(0);
+    document.getElementById('bm-latency').textContent = median(bmLatencies).toFixed(1);
+    verdict('bm', bmChildFps, median(bmLatencies));
+
+    if (bcLatencies.length > 300) bcLatencies.splice(0, bcLatencies.length - 300);
+    if (bmLatencies.length > 300) bmLatencies.splice(0, bmLatencies.length - 300);
+  }
+
+  requestAnimationFrame(loop);
+}
+function median(a){ if (!a.length) return 0; const s=[...a].sort((x,y)=>x-y); return s[s.length>>1]; }
+function verdict(prefix, fps, lat){
+  const el = document.getElementById(prefix+'-verdict');
+  if (fps >= 58 && lat < 16) { el.textContent = 'PASS'; el.className = 'pass'; }
+  else if (fps >= 30) { el.textContent = 'MARGINAL'; el.className = 'warn'; }
+  else if (fps > 0) { el.textContent = 'FAIL'; el.className = 'fail'; }
+  else { el.textContent = '— (no child)'; el.className = ''; }
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

@@ -1,0 +1,79 @@
+{
+  "version": 5,
+  "name": "dual-mesh-stereo",
+  "output": { "width": 1920, "height": 1080 },
+  "ui": { "selectedSurfaceId": "surf_left", "selectedLayerId": null, "mode": "edit" },
+  "surfaces": [
+    {
+      "id": "surf_left",
+      "name": "left mesh",
+      "z": 0,
+      "visible": true,
+      "opacity": 1.0,
+      "blendMode": "normal",
+      "layerIds": ["layer_left"],
+      "grade": { "lutId": null, "intensity": 1.0 },
+      "warp": {
+        "mode": "mesh",
+        "perspective": { "corners": [[-0.95,-0.6],[-0.05,-0.55],[-0.05,0.55],[-0.95,0.6]] },
+        "mesh": {
+          "gridX": 5, "gridY": 4,
+          "points": [
+            [-0.92,-0.55],[-0.71,-0.57],[-0.50,-0.58],[-0.29,-0.57],[-0.08,-0.55],
+            [-0.92,-0.18],[-0.71,-0.19],[-0.50,-0.20],[-0.29,-0.19],[-0.08,-0.18],
+            [-0.92, 0.18],[-0.71, 0.19],[-0.50, 0.20],[-0.29, 0.19],[-0.08, 0.18],
+            [-0.92, 0.55],[-0.71, 0.57],[-0.50, 0.58],[-0.29, 0.57],[-0.08, 0.55]
+          ]
+        }
+      }
+    },
+    {
+      "id": "surf_right",
+      "name": "right mesh",
+      "z": 0,
+      "visible": true,
+      "opacity": 1.0,
+      "blendMode": "normal",
+      "layerIds": ["layer_right"],
+      "grade": { "lutId": null, "intensity": 1.0 },
+      "warp": {
+        "mode": "mesh",
+        "perspective": { "corners": [[0.05,-0.55],[0.95,-0.6],[0.95,0.6],[0.05,0.55]] },
+        "mesh": {
+          "gridX": 5, "gridY": 4,
+          "points": [
+            [0.08,-0.55],[0.29,-0.57],[0.50,-0.58],[0.71,-0.57],[0.92,-0.55],
+            [0.08,-0.18],[0.29,-0.19],[0.50,-0.20],[0.71,-0.19],[0.92,-0.18],
+            [0.08, 0.18],[0.29, 0.19],[0.50, 0.20],[0.71, 0.19],[0.92, 0.18],
+            [0.08, 0.55],[0.29, 0.57],[0.50, 0.58],[0.71, 0.57],[0.92, 0.55]
+          ]
+        }
+      }
+    }
+  ],
+  "layers": [
+    {
+      "id": "layer_left",
+      "type": "shader",
+      "name": "left fbm",
+      "enabled": true,
+      "opacity": 1.0,
+      "blendMode": "normal",
+      "effect": "fbm",
+      "params": { "scale": 3.5, "tint": [0.2, 0.8, 1.0] }
+    },
+    {
+      "id": "layer_right",
+      "type": "shader",
+      "name": "right kaleido",
+      "enabled": true,
+      "opacity": 1.0,
+      "blendMode": "normal",
+      "effect": "kaleido",
+      "params": { "segments": 10 }
+    }
+  ],
+  "snapshots": [], "cues": [],
+  "midi": { "bindings": [], "deviceId": null },
+  "osc":  { "bindings": [], "url": "ws://127.0.0.1:8787" }
+}

@@ -1,0 +1,56 @@
+{
+  "version": 5,
+  "name": "generative-only",
+  "output": { "width": 1920, "height": 1080 },
+  "ui": { "selectedSurfaceId": "surf_gen1", "selectedLayerId": null, "mode": "edit" },
+  "surfaces": [
+    {
+      "id": "surf_gen1",
+      "name": "fbm + hydra",
+      "z": 0,
+      "visible": true,
+      "opacity": 1.0,
+      "blendMode": "normal",
+      "layerIds": ["layer_fbm", "layer_hydra"],
+      "grade": { "lutId": null, "intensity": 1.0 },
+      "warp": {
+        "mode": "quad",
+        "perspective": { "corners": [[-0.7, -0.5], [0.7, -0.5], [0.7, 0.5], [-0.7, 0.5]] },
+        "mesh": {
+          "gridX": 5, "gridY": 4,
+          "points": [
+            [-0.6,-0.6],[-0.3,-0.6],[0,-0.6],[0.3,-0.6],[0.6,-0.6],
+            [-0.6,-0.2],[-0.3,-0.2],[0,-0.2],[0.3,-0.2],[0.6,-0.2],
+            [-0.6, 0.2],[-0.3, 0.2],[0, 0.2],[0.3, 0.2],[0.6, 0.2],
+            [-0.6, 0.6],[-0.3, 0.6],[0, 0.6],[0.3, 0.6],[0.6, 0.6]
+          ]
+        }
+      }
+    }
+  ],
+  "layers": [
+    {
+      "id": "layer_fbm",
+      "type": "shader",
+      "name": "fbm warp",
+      "enabled": true,
+      "opacity": 1.0,
+      "blendMode": "normal",
+      "effect": "fbm",
+      "params": { "scale": 5.0, "tint": [0.95, 0.4, 0.85] }
+    },
+    {
+      "id": "layer_hydra",
+      "type": "hydra",
+      "name": "hydra overlay",
+      "enabled": true,
+      "opacity": 0.6,
+      "blendMode": "screen",
+      "code": "osc(8, 0.05, 0.9).kaleid(5).rotate(0.05).out()",
+      "resolution": 720
+    }
+  ],
+  "snapshots": [], "cues": [],
+  "midi": { "bindings": [], "deviceId": null },
+  "osc":  { "bindings": [], "url": "ws://127.0.0.1:8787" }
+}

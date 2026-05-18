@@ -1,0 +1,24 @@
+# local serving / cache
+.cache/
+vendor/.cache/
+node_modules/
+dist/
+
+# project artifacts
+*.map.local.json
+*.local.*
+
+# editor / OS
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*~
+
+# logs
+*.log
+npm-debug.log*
+
+# osc-bridge npm output
+osc-bridge/node_modules/

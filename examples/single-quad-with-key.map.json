@@ -1,0 +1,64 @@
+{
+  "version": 5,
+  "name": "single-quad-with-key",
+  "output": { "width": 1920, "height": 1080 },
+  "ui": { "selectedSurfaceId": "surf_main", "selectedLayerId": null, "mode": "edit" },
+  "surfaces": [
+    {
+      "id": "surf_main",
+      "name": "main projection",
+      "z": 0,
+      "visible": true,
+      "opacity": 1.0,
+      "blendMode": "normal",
+      "layerIds": ["layer_bg", "layer_video"],
+      "grade": { "lutId": null, "intensity": 1.0 },
+      "warp": {
+        "mode": "quad",
+        "perspective": { "corners": [[-0.8, -0.6], [0.8, -0.55], [0.85, 0.55], [-0.75, 0.6]] },
+        "mesh": {
+          "gridX": 5, "gridY": 4,
+          "points": [
+            [-0.6,-0.6],[-0.3,-0.6],[0,-0.6],[0.3,-0.6],[0.6,-0.6],
+            [-0.6,-0.2],[-0.3,-0.2],[0,-0.2],[0.3,-0.2],[0.6,-0.2],
+            [-0.6, 0.2],[-0.3, 0.2],[0, 0.2],[0.3, 0.2],[0.6, 0.2],
+            [-0.6, 0.6],[-0.3, 0.6],[0, 0.6],[0.3, 0.6],[0.6, 0.6]
+          ]
+        }
+      }
+    }
+  ],
+  "layers": [
+    {
+      "id": "layer_bg",
+      "type": "shader",
+      "name": "bg plasma",
+      "enabled": true,
+      "opacity": 1.0,
+      "blendMode": "normal",
+      "effect": "plasma",
+      "params": { "colorA": [0.05, 0.0, 0.15], "colorB": [0.4, 0.05, 0.6] }
+    },
+    {
+      "id": "layer_video",
+      "type": "video",
+      "name": "VJ clip (replace videoId after import)",
+      "enabled": true,
+      "opacity": 1.0,
+      "blendMode": "normal",
+      "videoId": "PLACEHOLDER_VIDEO_HASH",
+      "loop": true,
+      "muted": true,
+      "speed": 1.0,
+      "key": {
+        "mode": "luma",
+        "color": [0, 0, 0],
+        "low": 0.04, "high": 0.18,
+        "spill": 0.0
+      }
+    }
+  ],
+  "snapshots": [], "cues": [],
+  "midi": { "bindings": [], "deviceId": null },
+  "osc":  { "bindings": [], "url": "ws://127.0.0.1:8787" }
+}
