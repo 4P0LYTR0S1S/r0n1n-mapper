@@ -2,9 +2,11 @@
 
 All notable changes to r0n1n-mapper. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning is [SemVer](https://semver.org/) with calver-style date stamps for pre-1.0 milestones.
 
-## [Unreleased]
+## [0.2.0] — 2026-05-19
 
-### Added — FL Studio + DJ integration (toward v0.2)
+Performance-artist integration release. Three plug-and-play surfaces (FL Studio, DJ software, broadcast-ready audio routing) plus first-class DJ mode crossfader morph.
+
+### Added — FL Studio + DJ integration
 
 - **MIDI Clock auto-BPM** — parse 0xF8 / 0xFA / 0xFC system real-time messages, derive stable BPM via 48-sample rolling average over 24 PPQN pulses. When FL Studio (or any external transport) sends Master Sync, `u_bpm` locks to the sequencer; tap-tempo remains the fallback when no clock is present.
 - `u_bpm` exposed in `shader-layer` uniform contract so custom shader effects can build beat-aligned modulation.
@@ -66,4 +68,5 @@ Initial public release. Full Pro-v1 feature set per the M0–M5 build plan.
 
 Designed with significant AI collaboration under human direction. The architectural decisions, milestone plan, and code were drafted collaboratively over multiple sessions in 2026-05. Spike-driven validation against real Chromium hardware (ARM Mali-G925 / 16GB Chromebook) preceded each milestone commit. Released by 4P0LYTR0S1S collective under AGPL-3.0-or-later.
 
+[0.2.0]: https://codeberg.org/4P0LYTR0S1S/r0n1n-mapper/releases/tag/v0.2.0
 [0.1.0]: https://codeberg.org/4P0LYTR0S1S/r0n1n-mapper/releases/tag/v0.1.0
