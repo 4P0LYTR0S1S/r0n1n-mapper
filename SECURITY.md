@@ -1,8 +1,8 @@
 # Security disclosure
 
-Found a security issue? Email **4polytros1s@selfspark.dev** with a description
-and reproduction steps. Encrypt sensitive details with the operator's PGP key
-(fingerprint published at selfspark.dev/keys).
+Found a security issue? Email **security@apolytrosis.dev** with a description
+and reproduction steps. Encrypt sensitive details with the collective PGP key
+(fingerprint published at apolytrosis.dev/keys).
 
 For non-security-sensitive issues, file a Codeberg issue at
 https://codeberg.org/4P0LYTR0S1S/r0n1n-mapper/issues.
@@ -25,7 +25,7 @@ Out of scope:
 ## Disclosure timeline
 
 Aim is response within 5 business days, fix within 30 days for confirmed
-vulnerabilities. The operator follows a coordinated disclosure model: please
+vulnerabilities. The collective follows a coordinated disclosure model: please
 do not publicly disclose before a fix is shipped.
 
 ## Commercial dual-license

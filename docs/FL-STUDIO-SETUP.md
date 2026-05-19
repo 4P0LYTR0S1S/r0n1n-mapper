@@ -204,4 +204,4 @@ them into a v0.2 follow-up.
 
 ---
 
-Released by 4P0LYTR0S1S collective. AGPL-3.0-or-later. SC: [edge_runners_helpline](https://soundcloud.com/edge_runners_helpline).
+Released by 4P0LYTR0S1S collective. AGPL-3.0-or-later. Knowledge should not be hidden, gated, or rented. Tools belong to the people who use them. See README values section. SC: [edge_runners_helpline](https://soundcloud.com/edge_runners_helpline).

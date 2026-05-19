@@ -126,6 +126,23 @@ beyond it is intentionally absent.
 Released under AGPL-3.0-or-later. Designed for performance artists who
 actually have to perform.
 
+## Values
+
+Released under AGPL-3.0-or-later as an act of liberation. Knowledge should
+not be hidden, gated, or rented. Tools belong to the people who use them.
+
+**Mutual benefit, not extraction.** This work is for artists, researchers,
+students, hackers, performers — anyone building or learning. It is not for
+entities whose business model depends on enclosing shared knowledge into
+rent-bearing assets.
+
+The AGPL share-alike and network-use clauses encode this legally. This section
+states it plainly: contribute back, or be elsewhere.
+
+If you are building free tools, teaching, performing, researching, or hacking —
+welcome. If you are building a closed paid product around this code and not
+contributing back — you are not the audience.
+
 ## License
 
 AGPL-3.0-or-later. See `LICENSE` for the full text.
@@ -142,7 +159,7 @@ in `SECURITY.md`.
 
 - **Primary**: Codeberg, AGPL.
 - **Mirror**: GitHub, read-only push-mirror from Codeberg.
-- **Signing**: commits authored as `4P0LYTR0S1S <4polytros1s@selfspark.dev>`.
+- **Signing**: commits authored as `4P0LYTR0S1S <4p0lytr0s1s@apolytrosis.dev>`.
 - **Issues**: Codeberg issues are canonical; GitHub mirror has issues disabled.
 
 `docs/SPIKES.md` — empirical risk validation results from M0.

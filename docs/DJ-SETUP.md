@@ -227,4 +227,4 @@ plays great live.
 
 ---
 
-Released by 4P0LYTR0S1S collective. AGPL-3.0-or-later. Designed for performance artists who actually have to perform — SC: [edge_runners_helpline](https://soundcloud.com/edge_runners_helpline).
+Released by 4P0LYTR0S1S collective. AGPL-3.0-or-later. Designed for performance artists who actually have to perform. Knowledge should not be hidden, gated, or rented. Tools belong to the people who use them. See README values section. SC: [edge_runners_helpline](https://soundcloud.com/edge_runners_helpline).
