@@ -70,6 +70,39 @@ export function interpStates(a, b, t) {
   return t < 0.5 ? a : b;
 }
 
+// Lightweight per-frame DJ mode morph. Unlike `applyCrossfade` (used by the
+// cue engine for one-shot bar-aligned crossfades), this is called every frame
+// when djMode is active. It mutates state in place WITHOUT structuredClone or
+// going through store.update — the caller flips broadcastPending after the
+// morph so output tab stays in sync but autosave doesn't churn.
+//
+// Assumes both snapshots share the same surface/layer ids (operator picks
+// compatible decks). Only opacity + z are lerped — anything else snaps at
+// t=0 to snapA, t=1 to snapB but stays as whatever state currently holds
+// in between. This keeps the morph cheap and predictable for live use.
+export function djMorph(state, snapA, snapB, t) {
+  if (!snapA?.state || !snapB?.state) return;
+  const tt = Math.max(0, Math.min(1, t));
+  const mapById = (arr) => { const m = new Map(); for (const x of arr) m.set(x.id, x); return m; };
+  const surfA = mapById(snapA.state.surfaces ?? []);
+  const surfB = mapById(snapB.state.surfaces ?? []);
+  for (const surf of state.surfaces) {
+    const a = surfA.get(surf.id), b = surfB.get(surf.id);
+    if (a && b) {
+      surf.opacity = lerp(a.opacity ?? 1, b.opacity ?? 1, tt);
+      surf.z       = lerp(a.z ?? 0,       b.z ?? 0,       tt);
+    }
+  }
+  const layerA = mapById(snapA.state.layers ?? []);
+  const layerB = mapById(snapB.state.layers ?? []);
+  for (const layer of state.layers) {
+    const a = layerA.get(layer.id), b = layerB.get(layer.id);
+    if (a && b) {
+      layer.opacity = lerp(a.opacity ?? 1, b.opacity ?? 1, tt);
+    }
+  }
+}
+
 // Apply a partially-interpolated state at time t between snapA and snapB.
 // Returns a list of layerIds to attach (those new in B vs A) — but ONLY when t ≥ 0.5,
 // since before midpoint we're still rendering A's layer set.

@@ -106,7 +106,16 @@ export function parseMessage(ev) {
 }
 
 // Default dispatcher: applies bindings to the store. Caller installs via setHandler.
-export function createDispatcher(store) {
+// Two binding kinds:
+//   - CC bindings: continuous, sets state.path to scaled value (0..127 → min..max)
+//   - Note bindings: discrete triggers — fire an action.type with payload
+//
+// Built-in note-on actions (operator can extend via state.midi.bindings entries):
+//   snapshot.recall  — payload: slot index (0..15)
+//   cue.next         — payload: ignored
+//   cue.previous     — payload: ignored
+// Notes 60..75 (C3..D#4) auto-trigger snapshot.recall 0..15 even without explicit binding.
+export function createDispatcher(store, hooks = {}) {
   return (ev, input) => {
     const msg = parseMessage(ev);
     if (!msg) return;
@@ -129,13 +138,51 @@ export function createDispatcher(store) {
       }
     }
 
-    if (msg.type !== 'cc') return;
-    const bindings = store.state.midi?.bindings ?? [];
-    for (const b of bindings) {
-      if (b.channel === msg.channel && b.cc === msg.cc) {
-        const v = b.min + (msg.value / 127) * (b.max - b.min);
-        store.set(b.path, v);
+    if (msg.type === 'cc') {
+      const bindings = store.state.midi?.bindings ?? [];
+      for (const b of bindings) {
+        if (b.kind === 'note') continue;
+        if (b.channel === msg.channel && b.cc === msg.cc) {
+          const v = b.min + (msg.value / 127) * (b.max - b.min);
+          store.set(b.path, v);
+        }
+      }
+      return;
+    }
+
+    if (msg.type === 'noteOn') {
+      // Explicit note bindings first
+      const bindings = store.state.midi?.bindings ?? [];
+      for (const b of bindings) {
+        if (b.kind !== 'note') continue;
+        if (b.channel === msg.channel && b.note === msg.note) {
+          dispatchAction(b.action, store, hooks);
+          return;
+        }
+      }
+      // Default mapping: notes 60..75 → recall snapshot 0..15
+      if (msg.note >= 60 && msg.note <= 75) {
+        const idx = msg.note - 60;
+        dispatchAction({ type: 'snapshot.recall', payload: idx }, store, hooks);
       }
     }
   };
+}
+
+function dispatchAction(action, store, hooks) {
+  if (!action) return;
+  switch (action.type) {
+    case 'snapshot.recall':
+      hooks.recallSnapshot?.(action.payload);
+      break;
+    case 'cue.next':
+      hooks.cueNext?.();
+      break;
+    case 'cue.previous':
+      hooks.cuePrev?.();
+      break;
+    case 'cue.goto':
+      hooks.cueGoto?.(action.payload);
+      break;
+  }
 }

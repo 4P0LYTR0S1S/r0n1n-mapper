@@ -4,7 +4,7 @@
 import { defaultMeshPoints, DEFAULT_GRID_X, DEFAULT_GRID_Y } from '../surface/warp-mesh.js';
 import { defaultKey } from '../keyer/keyer-glsl.js';
 
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 
 export function emptyProject() {
   return {
@@ -18,6 +18,8 @@ export function emptyProject() {
     cues: [],        // [{ id, snapshotId, crossfadeMs }]
     midi: { bindings: [], deviceId: null },
     osc:  { bindings: [], url: 'ws://127.0.0.1:8787' },
+    audio: { deviceId: null },
+    djMode: { enabled: false, deckASnapId: null, deckBSnapId: null, value: 0.0 },
   };
 }
 
@@ -153,6 +155,15 @@ const MIGRATIONS = {
       ...proj,
       version: 5,
       osc: proj.osc ?? { bindings: [], url: 'ws://127.0.0.1:8787' },
+    };
+  },
+  5: (proj) => {
+    // v5 → v6: audio device persistence + djMode (crossfader-driven snapshot morph).
+    return {
+      ...proj,
+      version: 6,
+      audio:  proj.audio  ?? { deviceId: null },
+      djMode: proj.djMode ?? { enabled: false, deckASnapId: null, deckBSnapId: null, value: 0.0 },
     };
   },
 };

@@ -12,8 +12,10 @@
 let ctx = null;
 let analyser = null;
 let stream = null;
+let source = null;
 let fftBins = null;
 let initPromise = null;
+let currentDeviceId = null;
 
 // Bands (BT.709-ish musical bands, not strict freq cutoffs)
 const BAND_BASS_HZ = [40,   250];
@@ -31,24 +33,41 @@ const BEAT_MIN_INTERVAL = 0.15; // s, refractory
 
 const taps = [];
 
-export async function initAudio() {
-  if (ctx) return ctx;
-  if (initPromise) return initPromise;
+export async function initAudio(deviceId = null) {
+  if (ctx && currentDeviceId === (deviceId || 'default') && analyser) return ctx;
+  // Tear down previous source if we're swapping devices.
+  if (stream) { for (const t of stream.getTracks()) t.stop(); stream = null; }
+  if (source) { try { source.disconnect(); } catch {} source = null; }
   initPromise = (async () => {
-    ctx = new (window.AudioContext || window.webkitAudioContext)();
-    stream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
-    });
-    const source = ctx.createMediaStreamSource(stream);
-    analyser = ctx.createAnalyser();
-    analyser.fftSize = 2048;
-    analyser.smoothingTimeConstant = 0.7;
-    fftBins = new Uint8Array(analyser.frequencyBinCount);
+    if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const audioConstraints = {
+      echoCancellation: false, noiseSuppression: false, autoGainControl: false,
+    };
+    if (deviceId) audioConstraints.deviceId = { exact: deviceId };
+    stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
+    source = ctx.createMediaStreamSource(stream);
+    if (!analyser) {
+      analyser = ctx.createAnalyser();
+      analyser.fftSize = 2048;
+      analyser.smoothingTimeConstant = 0.7;
+      fftBins = new Uint8Array(analyser.frequencyBinCount);
+    }
     source.connect(analyser);
+    currentDeviceId = deviceId || 'default';
     return ctx;
   })();
   return initPromise;
 }
+
+export async function listAudioInputs() {
+  if (!navigator.mediaDevices?.enumerateDevices) return [];
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  return devices
+    .filter(d => d.kind === 'audioinput')
+    .map(d => ({ id: d.deviceId, label: d.label || `audio input ${d.deviceId.slice(0, 6)}` }));
+}
+
+export function currentAudioDeviceId() { return currentDeviceId; }
 
 export function audioReady() {
   return !!ctx && !!analyser;

@@ -4,12 +4,20 @@ All notable changes to r0n1n-mapper. Format follows [Keep a Changelog](https://k
 
 ## [Unreleased]
 
-### Added — FL Studio integration (toward v0.2)
+### Added — FL Studio + DJ integration (toward v0.2)
 
 - **MIDI Clock auto-BPM** — parse 0xF8 / 0xFA / 0xFC system real-time messages, derive stable BPM via 48-sample rolling average over 24 PPQN pulses. When FL Studio (or any external transport) sends Master Sync, `u_bpm` locks to the sequencer; tap-tempo remains the fallback when no clock is present.
 - `u_bpm` exposed in `shader-layer` uniform contract so custom shader effects can build beat-aligned modulation.
 - `docs/FL-STUDIO-SETUP.md` — end-to-end integration guide covering three parallel channels (MIDI CC for params, MIDI Clock for sync, audio loopback for FFT) with per-OS instructions (Windows loopMIDI + VB-Audio CABLE, macOS IAC + BlackHole, Linux ALSA virmidi + PulseAudio null-sink), Patcher template idea, latency budget, and recording strategies.
 - `docs/DJ-SETUP.md` — companion integration guide for DJ software. Per-app sections for algoriddim djay Pro (default CC map verified), Native Instruments Traktor (TSI mapping + Beat Phase CC trick), Mixxx (native OSC path through `osc-bridge`), Pioneer rekordbox (limited MIDI; audio-loopback fallback), Serato DJ Pro (Suite-only MIDI Out, fallback notes). Beatgrid-locked cue advance recipe, per-deck FFT routing pattern (deferred to v0.3), FX-bus-only reactivity recipe.
+- **Audio source picker** — `listAudioInputs()` enumerates `audioinput` devices via `mediaDevices.enumerateDevices()`. The topbar dropdown appears once permission has been granted (browsers withhold device labels pre-permission) and lets the operator swap between mic / loopback (BlackHole, VB-CABLE, PulseAudio monitor) without a page reload. Choice persists in `state.audio.deviceId` (schema v6).
+- **DJ mode crossfader morph** — first-class `djMode: { enabled, deckASnapId, deckBSnapId, value }` state field. Per-frame in-place lerp (`snapshots.djMorph`) of surface + layer opacity / z between two snapshot slots driven by `value` (0..1). Touch the crossfade slider + MIDI Learn → bind your DJ controller's crossfader CC. Cheaper than re-applying snapshots every frame; doesn't churn the autosave debounce.
+- **MIDI note-on triggers** — notes 60..75 (C3..D#4) auto-recall snapshot slots 1..16 with no Learn step required. Explicit note bindings supported via `kind: 'note'` + `action: { type: 'snapshot.recall' | 'cue.next' | 'cue.previous' | 'cue.goto', payload }`. Dispatcher hooks routed from the editor (`recallSnapshot`, `cueNext`, `cuePrev`).
+- **algoriddim djay preset** — `presets/dj-algoriddim.json` defines a default CC map matching djay Pro 5 with "Send Mixer Controls" enabled (crossfader CC 8 → `/djMode/value`, per-deck volume → surface opacity, EQ low → grade intensity, FX wet → layer opacity). One-click "apply djay preset" button injects the bindings.
+
+### Schema
+
+- **v5 → v6** — adds `state.audio.deviceId` and `state.djMode`. Old projects migrate cleanly (both fields default to null / disabled).
 
 ## [0.1.0] — 2026-05-18
 

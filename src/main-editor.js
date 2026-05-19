@@ -11,9 +11,9 @@ import { attachWebcam, emptyWebcamLayer } from './layers/webcam-layer.js';
 import { attachShader, emptyShaderLayer } from './layers/shader-layer.js';
 import { attachHydra, emptyHydraLayer } from './layers/hydra-layer.js';
 import { EFFECT_NAMES } from './layers/shader-effects.js';
-import { initAudio, tap as tapTempo } from './audio/analyser.js';
+import { initAudio, tap as tapTempo, listAudioInputs, currentAudioDeviceId } from './audio/analyser.js';
 import { createAudioState } from './audio/uniforms.js';
-import { emptySnapshot, captureSnapshot, applySnapshot } from './project/snapshots.js';
+import { emptySnapshot, captureSnapshot, applySnapshot, djMorph } from './project/snapshots.js';
 import { emptyCue, createCueEngine } from './project/cues.js';
 import { initMidi, midiInputs, setHandler, touchParam, startLearn, isLearning, cancelLearn, createDispatcher, clockBpm, clockRunning } from './input/midi.js';
 // Expose clockBpm to the audio module so its computeBpm prefers MIDI Clock when live.
@@ -178,6 +178,7 @@ function syncUI() {
   buildCueList();
   buildMidiBindings();
   buildOscBindings();
+  buildDjDeckPickers();
   const sel = selectedSurface();
   if (!sel) { propsEl.hidden = true; return; }
   propsEl.hidden = false;
@@ -637,15 +638,51 @@ if (selShader) {
     selShader.appendChild(opt);
   }
 }
+const audioDeviceSel = document.getElementById('audio-device');
+async function refreshAudioDevices() {
+  if (!audioDeviceSel) return;
+  const inputs = await listAudioInputs();
+  audioDeviceSel.hidden = inputs.length <= 1;
+  audioDeviceSel.innerHTML = '';
+  const cur = currentAudioDeviceId();
+  // 'default' option lets the OS pick (matches getUserMedia({audio:true}) behavior)
+  const defOpt = document.createElement('option');
+  defOpt.value = ''; defOpt.textContent = 'default';
+  if (!cur || cur === 'default') defOpt.selected = true;
+  audioDeviceSel.appendChild(defOpt);
+  for (const d of inputs) {
+    const opt = document.createElement('option');
+    opt.value = d.id; opt.textContent = d.label;
+    if (d.id === cur) opt.selected = true;
+    audioDeviceSel.appendChild(opt);
+  }
+}
+
 if (btnAudio) {
   btnAudio.onclick = async () => {
     try {
-      await initAudio();
+      const saved = store.state.audio?.deviceId || null;
+      await initAudio(saved);
       btnAudio.textContent = '🎤 live';
-      btnAudio.disabled = true;
+      btnAudio.disabled = false; // stays clickable for re-prompt if needed
+      await refreshAudioDevices();
     } catch (e) {
       console.error('[editor] audio init', e);
       alert('audio access denied: ' + e.message);
+    }
+  };
+}
+
+if (audioDeviceSel) {
+  audioDeviceSel.onchange = async () => {
+    const id = audioDeviceSel.value || null;
+    try {
+      await initAudio(id);
+      store.update('', (st) => { st.audio.deviceId = id; });
+    } catch (e) {
+      console.error('[editor] audio swap', e);
+      alert('audio source swap failed: ' + e.message);
+      await refreshAudioDevices(); // revert UI to actual state
     }
   };
 }
@@ -775,7 +812,11 @@ btnEnableMidi.onclick = async () => {
   try {
     await initMidi();
     midiReady = true;
-    setHandler(createDispatcher(store));
+    setHandler(createDispatcher(store, {
+      recallSnapshot: (i) => recallSlot(i),
+      cueNext:        () => cueEngine.advance(),
+      cuePrev:        () => cueEngine.previous(),
+    }));
     btnEnableMidi.textContent = 'midi live';
     btnEnableMidi.disabled = true;
     refreshMidiDevices();
@@ -865,6 +906,59 @@ function buildOscBindings() {
   }
 }
 
+// ---- dj mode ----
+const djEnabled = document.getElementById('dj-enabled');
+const djDeckA   = document.getElementById('dj-deck-a');
+const djDeckB   = document.getElementById('dj-deck-b');
+const djValue   = document.getElementById('dj-value');
+const btnDjayPreset = document.getElementById('btn-dj-preset-djay');
+
+function buildDjDeckPickers() {
+  if (!djDeckA || !djDeckB) return;
+  const dj = store.state.djMode || {};
+  const filled = store.state.snapshots.filter(s => s.state);
+  for (const sel of [djDeckA, djDeckB]) {
+    const cur = sel === djDeckA ? dj.deckASnapId : dj.deckBSnapId;
+    sel.innerHTML = '<option value="">— pick —</option>';
+    for (const snap of filled) {
+      const opt = document.createElement('option');
+      opt.value = snap.id;
+      opt.textContent = snap.name;
+      if (snap.id === cur) opt.selected = true;
+      sel.appendChild(opt);
+    }
+  }
+  djEnabled.checked = !!dj.enabled;
+  if (document.activeElement !== djValue) djValue.value = dj.value ?? 0;
+}
+
+djEnabled.onchange = () => store.update('', (st) => { st.djMode.enabled = djEnabled.checked; });
+djDeckA.onchange   = () => store.update('', (st) => { st.djMode.deckASnapId = djDeckA.value || null; });
+djDeckB.onchange   = () => store.update('', (st) => { st.djMode.deckBSnapId = djDeckB.value || null; });
+djValue.oninput    = () => {
+  touchParam('/djMode/value');
+  store.update('', (st) => { st.djMode.value = +djValue.value; });
+};
+
+btnDjayPreset.onclick = async () => {
+  let preset;
+  try {
+    const res = await fetch('presets/dj-algoriddim.json');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    preset = await res.json();
+  } catch (e) {
+    console.error('[dj] preset fetch', e); alert('Failed to load djay preset: ' + e.message); return;
+  }
+  store.update('', (st) => {
+    for (const b of preset.midiBindings) {
+      st.midi.bindings.push({
+        id: 'mb_' + crypto.randomUUID().slice(0, 8),
+        ...b,
+      });
+    }
+  });
+};
+
 // ---- recording ----
 const btnRecord = document.getElementById('btn-record');
 btnRecord.onclick = async () => {
@@ -944,6 +1038,19 @@ function frame() {
 
   audioState.tick(t);
   cueEngine.tick();
+
+  // DJ mode morph: per-frame in-place blend of snapshot A vs B by djMode.value.
+  // Skips structuredClone for live performance — see snapshots.js:djMorph.
+  const dj = store.state.djMode;
+  if (dj?.enabled && dj.deckASnapId && dj.deckBSnapId) {
+    const snapA = findSnapshot(dj.deckASnapId);
+    const snapB = findSnapshot(dj.deckBSnapId);
+    if (snapA && snapB) {
+      djMorph(store.state, snapA, snapB, dj.value ?? 0);
+      broadcastPending = true;
+    }
+  }
+
   pipeline.render(store.state, layerRuntimes, { getLut: getLutEntry });
   overlay.render(store.state, store.state.ui.selectedSurfaceId);
 

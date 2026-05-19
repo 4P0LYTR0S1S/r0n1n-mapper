@@ -1,0 +1,13 @@
+{
+  "name": "algoriddim djay Pro (defaults)",
+  "version": 1,
+  "notes": "Default MIDI Out map from djay Pro 5 with Send Mixer Controls enabled. Adjust CC numbers in your djay preferences if your build differs. Channel numbering here is 0-indexed (djay UI shows 1-16 — subtract 1).",
+  "midiBindings": [
+    { "kind": "cc", "channel": 0, "cc": 8,  "path": "/djMode/value",       "min": 0, "max": 1 },
+    { "kind": "cc", "channel": 0, "cc": 7,  "path": "/surfaces/0/opacity", "min": 0, "max": 1 },
+    { "kind": "cc", "channel": 1, "cc": 7,  "path": "/surfaces/1/opacity", "min": 0, "max": 1 },
+    { "kind": "cc", "channel": 0, "cc": 12, "path": "/surfaces/0/grade/intensity", "min": 0, "max": 1 },
+    { "kind": "cc", "channel": 0, "cc": 14, "path": "/layers/0/opacity",   "min": 0, "max": 1 },
+    { "kind": "cc", "channel": 1, "cc": 14, "path": "/layers/1/opacity",   "min": 0, "max": 1 }
+  ]
+}

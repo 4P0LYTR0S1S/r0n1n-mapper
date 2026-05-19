@@ -143,17 +143,36 @@ when your projector chain costs you a frame anyway.
 
 ## DJ-flavored r0n1n recipes
 
-### 1. Crossfader-driven snapshot morph
+### 1. Crossfader-driven snapshot morph (DJ mode — v0.2+)
 
-Bind your DJ crossfader CC to **two** snapshot slots' opacities. Configure:
-- Slot 1: deck-A visuals (e.g. blue palette, slow FBM)
-- Slot 2: deck-B visuals (e.g. red palette, fast kaleido)
-- Two cues, both with crossfade = 0ms (hard cut at advance)
-- Bind crossfader CC to `/surfaces/0/opacity` for slot 1 and the inverse (max - value) for slot 2
+The **DJ mode** panel exposes this as a single first-class binding instead of
+two inverse-mapped CCs:
 
-Today this requires two manual MIDI Learn binds. A first-class **"DJ mode"**
-state field — `djMode: { deckASnap, deckBSnap, crossfader }` — would expose
-this as a single bind. Tell me if that's worth a v0.2 patch.
+1. Save deck-A visuals to a snapshot slot (shift-click slot 1).
+2. Save deck-B visuals to another slot (shift-click slot 2).
+3. Open the **dj mode** panel → tick **enabled** → pick slot 1 as deck A,
+   slot 2 as deck B.
+4. Touch the **crossfade** slider → click MIDI **learn** → twiddle your DJ
+   crossfader. Bound.
+
+Every frame, surface and layer opacities are linearly interpolated between
+the two snapshots by the crossfader value. Z-order also lerps. Both
+snapshots should share the same surface + layer IDs (the morph is a numeric
+blend, not a layer-set swap — that's what **cues** are for). If they don't,
+non-shared fields just snap.
+
+Algoriddim djay's default mapping (Send Mixer Controls = on) sends the
+crossfader as **CC 8 on channel 1**. Click **apply djay preset** in the dj
+mode panel to bind it (and per-deck volume, EQ low, FX wet) in one shot.
+Adjust paths in `presets/dj-algoriddim.json` if your project layout differs.
+
+### Note-on triggers (v0.2+)
+
+Out of the box, MIDI **notes 60 (C3) through 75 (D#4)** recall snapshot
+slots **1 through 16**. Hit a pad on your DJ controller mapped to one of
+those notes → that snapshot recalls instantly. Useful for "punch in look X
+on the drop" — wire the FX trigger pads on a Pioneer DDJ or the Hot Cue
+pads on a Traktor S-series. No Learn step needed for the default range.
 
 ### 2. Beatgrid-locked cue advance
 
@@ -208,4 +227,4 @@ plays great live.
 
 ---
 
-Released by 4P0LYTR0S1S collective. AGPL-3.0-or-later.
+Released by 4P0LYTR0S1S collective. AGPL-3.0-or-later. Designed for performance artists who actually have to perform — SC: [edge_runners_helpline](https://soundcloud.com/edge_runners_helpline).
