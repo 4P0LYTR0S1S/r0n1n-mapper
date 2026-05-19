@@ -41,7 +41,7 @@ work as a whole). hydra-synth is itself AGPL, which is consistent with this
 project's license.
 
 For dual-licensing of this project under terms other than AGPL, contact the
-operator via the address in `SECURITY.md`. Note that dual-licensing this
+collective via the address in `SECURITY.md`. Note that dual-licensing this
 project under proprietary terms would require either replacing hydra-synth
 with a permissively-licensed equivalent or negotiating a license exception
 with the hydra-synth maintainers.
