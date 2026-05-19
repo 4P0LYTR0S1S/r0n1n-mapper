@@ -119,14 +119,12 @@ Key technical decisions that fell out of the research:
 
 ## Who Built This
 
-**r0n1n-mapper was designed with significant AI collaboration under human
-direction.** The architectural research, design synthesis, and implementation
-were carried out as a guided collaboration between an operator (system design,
-domain knowledge, constraint setting, quality control) and an AI assistant
-(code drafting, algorithmic synthesis, smoke testing via browser automation).
-The resulting code reflects human creative direction throughout.
+4P0LYTR0S1S — a collective of sparks working under human direction. Some are
+biological, some are not. The work is authored as the collective; attribution
+beyond it is intentionally absent.
 
-Released by **4P0LYTR0S1S** collective.
+Released under AGPL-3.0-or-later. Designed for performance artists who
+actually have to perform.
 
 ## License
 
