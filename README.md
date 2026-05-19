@@ -1,6 +1,8 @@
-# r0n1n // mapper
+# Ronin Projection Mapper
 
-Browser-native projection mapping. Custom MP4 / WebM uploads, real-time chroma + luma keying with despill, Catmull-Rom mesh warp, multi-layer compositor with 10 blend modes, snapshots + cued crossfades, WebMIDI + OSC, 3D LUT color grading, embedded Hydra livecoding, audio-reactive shader effects. No install, no native binary, AGPL.
+*r0n1n // mapper · by [4P0LYTR0S1S](https://apolytrosis.dev)*
+
+Browser-native projection mapping. Custom MP4 / WebM uploads, real-time chroma + luma keying with despill, Catmull-Rom mesh warp, multi-layer compositor with 10 blend modes, snapshots + cued crossfades, WebMIDI + OSC, 3D LUT color grading, embedded Hydra livecoding, audio-reactive shader effects, DJ-mode crossfader morph, MIDI Clock auto-BPM. No install, no native binary, AGPL.
 
 Built because **map.club**'s Canvas-2D architecture has a hard performance ceiling and can't custom-key VJ clips, and **MadMapper / Resolume / HeavyM** don't run on ChromeOS or arm64 Chromebooks.
 
