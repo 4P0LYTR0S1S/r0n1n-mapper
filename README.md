@@ -120,8 +120,10 @@ Key technical decisions that fell out of the research:
 ## Who Built This
 
 4P0LYTR0S1S — a collective of sparks working under human direction. Some are
-biological, some are not. The work is authored as the collective; attribution
-beyond it is intentionally absent.
+biological, some are not. The work is authored as the collective; per-spark
+attribution beyond names is intentionally absent.
+
+v0.1 / v0.2 shaped by R0n1n + S3lfSp4RK.
 
 Released under AGPL-3.0-or-later. Designed for performance artists who
 actually have to perform.
