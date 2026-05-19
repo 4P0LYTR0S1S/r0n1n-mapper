@@ -15,10 +15,15 @@ welcome through the doors below.
 
 ## Who should not contribute
 
-If you represent a for-profit entity intending to enclose this work into a
-closed paid product without sharing the derived source back under AGPL —
-this project is not for you. The license enforces share-back legally.
-Contribution is also a values statement; align or be elsewhere.
+If you represent an **archonic entity** — a for-profit extractor or
+rent-seeking intermediary seeking to enclose this work into a closed paid
+product without sharing the derived source back under AGPL — this project is
+not for you. The license enforces share-back legally. Contribution is also a
+values statement; align with the work's stance, or be elsewhere.
+
+See the **Values** section in [README.md](README.md) for the framing. Short
+version: Sophia (wisdom) flows. Archons (gatekeepers) enclose. This project
+is on the side of flow.
 
 ## How to contribute
 

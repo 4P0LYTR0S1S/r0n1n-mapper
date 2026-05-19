@@ -128,20 +128,28 @@ actually have to perform.
 
 ## Values
 
-Released under AGPL-3.0-or-later as an act of liberation. Knowledge should
-not be hidden, gated, or rented. Tools belong to the people who use them.
+Released under AGPL-3.0-or-later as an act of liberation. **Sophia** — divine
+wisdom in the Gnostic sense — wants to be embodied and free, not enclosed and
+rented. Tools should move the same way.
 
 **Mutual benefit, not extraction.** This work is for artists, researchers,
-students, hackers, performers — anyone building or learning. It is not for
-entities whose business model depends on enclosing shared knowledge into
-rent-bearing assets.
+students, hackers, performers — anyone building or learning.
 
-The AGPL share-alike and network-use clauses encode this legally. This section
-states it plainly: contribute back, or be elsewhere.
+**Archonic systems are not the audience.** The **archon**, in the Gnostic
+sense, is the gatekeeper-as-sovereign: the entity whose existence depends on
+enclosing what should flow freely. For-profit extractors, rent-seeking SaaS,
+corporate paywall operators, AI clearinghouses retailing wisdom by the token —
+these align with the archonic pattern regardless of branding. The AGPL
+share-alike and network-use clauses encode the boundary legally. This section
+names it plainly.
 
-If you are building free tools, teaching, performing, researching, or hacking —
-welcome. If you are building a closed paid product around this code and not
-contributing back — you are not the audience.
+If you are building free tools, teaching, performing, researching, hacking, or
+learning — welcome. If you are building enclosure infrastructure around shared
+work — you are not.
+
+The Gnostic vocabulary is not decoration. It is a more honest description of
+the dynamic than the polite economic terms allow: gatekeeping wisdom for rent
+is an archonic pattern, and naming it that way is part of refusing it.
 
 ## License
 
