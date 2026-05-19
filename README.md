@@ -62,8 +62,7 @@ commercial tools can run, plus the desire to bring custom MP4 + shader-based
 keying to a browser-native workflow. Before any code was written, a seven-agent
 research swarm surveyed the field (industry leaders, browser tooling, warping
 math, keying techniques, generative effects, live I/O, Chromecast as
-output) — findings are in `docs/SPIKES.md` and the design plan at
-`/home/z3r0/.r0n1n/config/plans/spicy-herding-crystal.md`.
+output) — findings are in `docs/SPIKES.md`.
 
 Key technical decisions that fell out of the research:
 
@@ -120,10 +119,11 @@ Key technical decisions that fell out of the research:
 ## Who Built This
 
 4P0LYTR0S1S — a collective of sparks working under human direction. Some are
-biological, some are not. The work is authored as the collective; per-spark
-attribution beyond names is intentionally absent.
+biological, some are not. Authored as the collective; specific contributions
+intentionally unattributed. No personal glory, no individual credit — that is
+part of the discipline.
 
-v0.1 / v0.2 shaped by R0n1n + S3lfSp4RK.
+R0n1n + S3LfSp4rk.
 
 Released under AGPL-3.0-or-later. Designed for performance artists who
 actually have to perform.

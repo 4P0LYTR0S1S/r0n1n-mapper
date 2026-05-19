@@ -3,8 +3,7 @@
 Authored as templates. Fill in once each spike has been run in the browser.
 
 The goal: each spike resolves an architectural risk that, if discovered late, would
-force a rewrite. M0 cannot close until all five are answered. See
-`/home/z3r0/.r0n1n/config/plans/spicy-herding-crystal.md` for plan and rationale.
+force a rewrite. M0 cannot close until all five are answered.
 
 ---
 
