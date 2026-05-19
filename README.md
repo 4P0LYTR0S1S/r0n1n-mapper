@@ -155,15 +155,20 @@ is an archonic pattern, and naming it that way is part of refusing it.
 
 ## License
 
-AGPL-3.0-or-later. See `LICENSE` for the full text.
+**AGPL-3.0-or-later.** See `LICENSE` for the full text.
 
-The AGPL means: if you run this code as a service over a network, your users
-get the right to the modified source. Forking + private hosting is fine for
-hobbyist use; running a SaaS off this code requires releasing your fork.
+**Free for the commons.** Artists, performers, researchers, students, hackers,
+hobbyists, non-profits, educational use — the AGPL grants you full rights.
+Fork it, hack it, ship your tour with it, teach with it. The only obligation
+is share-back: your improvements must remain AGPL.
 
-If those terms don't fit your use case, the operator maintains a commercial
-dual-license track that waives AGPL's network-use clause. Contact details
-in `SECURITY.md`.
+**Companies negotiate.** If you are building a closed-source commercial product
+or a hosted SaaS off this code and don't want to release your fork under AGPL,
+you need a separate commercial license. The collective maintains a dual-license
+track that waives AGPL's network-use and copyleft clauses for commercial terms.
+Contact details in `SECURITY.md`.
+
+FOSS with teeth: free for the commons, terms for the extractors.
 
 ## Repo conventions
 

@@ -30,6 +30,10 @@ do not publicly disclose before a fix is shipped.
 
 ## Commercial dual-license
 
-Use of this code under terms other than AGPL-3.0-or-later (e.g. as part of a
-proprietary commercial product or a closed-source SaaS) requires a separate
-commercial license. Contact the address above for terms.
+AGPL is free for the commons. If your use case is closed-source commercial
+distribution or hosted SaaS that doesn't want to release source under AGPL,
+you need a separate license. The collective maintains a dual-license track
+that waives the network-use and copyleft clauses for commercial terms.
+
+Contact `security@apolytrosis.dev` (also the disclosure mailbox above).
+Terms scale with use case — bring your scope, we negotiate.

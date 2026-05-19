@@ -222,7 +222,7 @@ plays great live.
 - **Cue point markers** — same story. DJ-app specific, no common standard.
 - **Beatgrid alignment past the bar** — MIDI Clock gives us beats, not
   bar boundaries. The DJ knows when bars start (they made the beatgrid);
-  r0n1n can only infer. A "tap downbeat" UX (operator hits a key on the
+  r0n1n can only infer. A "tap downbeat" UX (performer hits a key on the
   one) would give us bar phase; ~20 LOC if it's wanted.
 
 ---
