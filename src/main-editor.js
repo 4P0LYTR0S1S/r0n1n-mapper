@@ -907,13 +907,13 @@ function buildOscBindings() {
 }
 
 // ---- dj mode ----
-const djEnabled = document.getElementById('dj-enabled');
-const djDeckA   = document.getElementById('dj-deck-a');
-const djDeckB   = document.getElementById('dj-deck-b');
-const djValue   = document.getElementById('dj-value');
-const btnDjayPreset = document.getElementById('btn-dj-preset-djay');
-
+// IDs resolved lazily inside builders to dodge boot-time TDZ: store.update()
+// from ensureSlots() above fires syncUI() before this section's bindings run.
 function buildDjDeckPickers() {
+  const djEnabled = document.getElementById('dj-enabled');
+  const djDeckA   = document.getElementById('dj-deck-a');
+  const djDeckB   = document.getElementById('dj-deck-b');
+  const djValue   = document.getElementById('dj-value');
   if (!djDeckA || !djDeckB) return;
   const dj = store.state.djMode || {};
   const filled = store.state.snapshots.filter(s => s.state);
@@ -928,9 +928,15 @@ function buildDjDeckPickers() {
       sel.appendChild(opt);
     }
   }
-  djEnabled.checked = !!dj.enabled;
-  if (document.activeElement !== djValue) djValue.value = dj.value ?? 0;
+  if (djEnabled) djEnabled.checked = !!dj.enabled;
+  if (djValue && document.activeElement !== djValue) djValue.value = dj.value ?? 0;
 }
+
+const djEnabled = document.getElementById('dj-enabled');
+const djDeckA   = document.getElementById('dj-deck-a');
+const djDeckB   = document.getElementById('dj-deck-b');
+const djValue   = document.getElementById('dj-value');
+const btnDjayPreset = document.getElementById('btn-dj-preset-djay');
 
 djEnabled.onchange = () => store.update('', (st) => { st.djMode.enabled = djEnabled.checked; });
 djDeckA.onchange   = () => store.update('', (st) => { st.djMode.deckASnapId = djDeckA.value || null; });
