@@ -24,8 +24,28 @@ export function createAudioState(regl) {
     }
   }
 
+  // replace() lets a consumer (e.g. the output tab) accept audio state
+  // computed elsewhere (e.g. broadcast from the editor) instead of running
+  // a local analyser. Pass { ...uniforms, fftBins } as received.
+  function replace(received) {
+    if (!received) return;
+    const { fftBins, ...u } = received;
+    lastUniforms = u;
+    if (fftBins && fftBins.length) {
+      if (!fftTex) {
+        fftTex = regl.texture({
+          width: fftBins.length, height: 1,
+          format: 'luminance', type: 'uint8',
+          min: 'linear', mag: 'linear', wrap: 'clamp',
+        });
+      }
+      fftTex({ width: fftBins.length, height: 1, data: fftBins, format: 'luminance', type: 'uint8' });
+    }
+  }
+
   return {
     tick,
+    replace,
     get uniforms() { return lastUniforms; },
     get fftTexture() { return fftTex; },
     get ready() { return audioReady(); },

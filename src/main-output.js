@@ -9,6 +9,7 @@ import { attachWebcam } from './layers/webcam-layer.js';
 import { attachShader } from './layers/shader-layer.js';
 import { attachHydra } from './layers/hydra-layer.js';
 import { createAudioState } from './audio/uniforms.js';
+import { initAudio } from './audio/analyser.js';
 import { createPipeline } from './render/pipeline.js';
 import { parseCube, uploadLutTexture } from './grade/lut.js';
 import { getLut as idbGetLut, listLuts } from './storage/idb.js';
@@ -89,7 +90,30 @@ window.addEventListener('keydown', (e) => {
     if (document.fullscreenElement) document.exitFullscreen();
     else document.documentElement.requestFullscreen();
   }
+  // 'a' (audio) — request mic permission for this output tab. Required
+  // because Chrome throttles the editor tab in background, so the output
+  // can't rely on receiving audio from the editor. Each tab needs its
+  // own analyser.
+  if (e.key === 'a' || e.key === 'A') {
+    initAudio(null).then(() => {
+      console.log('[output] audio enabled on output tab');
+      const banner = document.getElementById('idle');
+      if (banner) banner.textContent = '🎤 audio live · F = fullscreen';
+    }).catch(e => console.error('[output] audio enable failed', e));
+  }
 });
+
+// Auto-prompt for mic on first user interaction with the output canvas.
+// Falls back gracefully if denied — output still mirrors editor state, just
+// without audio reactivity from this tab's perspective.
+canvas.addEventListener('click', () => {
+  if (audioState.ready) return;
+  initAudio(null).then(() => {
+    console.log('[output] audio enabled via canvas click');
+    const banner = document.getElementById('idle');
+    if (banner) banner.textContent = '🎤 audio live · F = fullscreen';
+  }).catch(e => console.warn('[output] audio click-grant failed', e));
+}, { once: true });
 
 function frame() {
   fitCanvas(canvas);

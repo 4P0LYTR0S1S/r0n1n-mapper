@@ -2,6 +2,19 @@
 
 All notable changes to r0n1n-mapper. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning is [SemVer](https://semver.org/) with calver-style date stamps for pre-1.0 milestones.
 
+## [0.2.2] — 2026-05-21
+
+Audio resilience hotfix. Output tab gains its own microphone path because Chrome aggressively throttles background tabs — when the output window sat behind the editor (or sat on a second display Chrome considered "inactive"), its rAF clock slowed to ~1 Hz and any audio sourced via editor-side broadcast was effectively dead. The output now requests its own `getUserMedia` so audio reactivity survives whichever tab loses focus. Also widens the cross-tab audio plumbing so the broadcast path stays available as a future fallback.
+
+### Added
+
+- **`src/main-output.js`** — `'a' / 'A'` key on the output tab calls `initAudio(null)` to request mic permission directly. Also: clicking the output canvas auto-prompts on first interaction (one-shot), with `console.warn` on denial so the rest of the pipeline (state mirror, no-audio shaders, video layers) keeps running.
+- **`src/audio/uniforms.js`** — `replace(received)` method on `audioState`. Lets a tab consume audio uniforms broadcast from another tab as an alternative to running its own analyser; currently unused but future-ready.
+
+### Fixed
+
+- **`output.html`** — `?v=3` cache-bust on `main-output.js` so v0.2.1 installs pick up the new audio paths on their next visit.
+
 ## [0.2.1] — 2026-05-20
 
 Hotfix release. Output tab was crashing on load since v0.2.0 due to a temporal dead zone bug in `main-output.js` — `createAudioState(regl)` was being called before `regl` had been initialized. The output tab never reached its BroadcastChannel subscriber, so editor → output state sync never worked in any v0.2.0 install. This release reorders the initialization and adds a manual push affordance for any future case where auto-sync stalls.
