@@ -1024,6 +1024,22 @@ importFile.onchange = async () => {
 
 btnOutput.onclick = () => window.open('output.html', '_blank');
 
+// Manual push — force full state to output tab. Use when auto-sync stalls.
+const btnPush = $('btn-push');
+if (btnPush) {
+  btnPush.onclick = () => {
+    broadcastState();
+    console.log('[broadcast] manual push: state:full sent', {
+      surfaces: store.state.surfaces?.length ?? 0,
+      layers: store.state.layers?.length ?? 0,
+    });
+    btnPush.classList.add('flash');
+    setTimeout(() => btnPush.classList.remove('flash'), 200);
+  };
+}
+// Also expose for devtools console use
+window.__broadcastState = broadcastState;
+
 // ---- drag corners / mesh CPs ----
 attachDrag(canvas, selectedSurface, {
   onDragMove: (kind, index, clip) => {

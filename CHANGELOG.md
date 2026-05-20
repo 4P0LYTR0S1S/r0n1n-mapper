@@ -2,6 +2,20 @@
 
 All notable changes to r0n1n-mapper. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning is [SemVer](https://semver.org/) with calver-style date stamps for pre-1.0 milestones.
 
+## [0.2.1] — 2026-05-20
+
+Hotfix release. Output tab was crashing on load since v0.2.0 due to a temporal dead zone bug in `main-output.js` — `createAudioState(regl)` was being called before `regl` had been initialized. The output tab never reached its BroadcastChannel subscriber, so editor → output state sync never worked in any v0.2.0 install. This release reorders the initialization and adds a manual push affordance for any future case where auto-sync stalls.
+
+### Fixed
+
+- **`src/main-output.js`** — `audioState` and the LUT-manager IIFE moved to after `const regl = initRegl(canvas)`. Output tab now initializes cleanly, BroadcastChannel handshake completes, `body.live` + `sync ✓` show in the output HUD as expected.
+- **`output.html`** — `?v=2` cache-bust appended to the `main-output.js` script src so existing v0.2.0 users who already loaded the broken module pick up the fix on their next visit instead of being stuck on the cached crash.
+
+### Added
+
+- **Editor topbar `↺ push` button** — manual force-send of `state:full` to the output tab. Useful when an external change to state slips past the `store.subscribe` autosync path.
+- **`window.__broadcastState`** — same function exposed on the editor window for devtools-console invocation (`__broadcastState()`).
+
 ## [0.2.0] — 2026-05-19
 
 Performance-artist integration release. Three plug-and-play surfaces (FL Studio, DJ software, broadcast-ready audio routing) plus first-class DJ mode crossfader morph.

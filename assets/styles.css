@@ -128,3 +128,6 @@ body[data-tab="output"] #idle {
   color: #1a1a24; font-size: 13px; pointer-events: none;
 }
 body[data-tab="output"].live #idle { display: none; }
+
+/* manual push button flash feedback */
+button.flash { background: var(--accent); color: #000; transition: background 0.15s ease; }

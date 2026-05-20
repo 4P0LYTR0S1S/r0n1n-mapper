@@ -9,7 +9,15 @@ import { attachWebcam } from './layers/webcam-layer.js';
 import { attachShader } from './layers/shader-layer.js';
 import { attachHydra } from './layers/hydra-layer.js';
 import { createAudioState } from './audio/uniforms.js';
+import { createPipeline } from './render/pipeline.js';
+import { parseCube, uploadLutTexture } from './grade/lut.js';
+import { getLut as idbGetLut, listLuts } from './storage/idb.js';
 
+const canvas = document.getElementById('view');
+const fpsEl  = document.getElementById('fps');
+const syncEl = document.getElementById('sync-state');
+
+const regl = initRegl(canvas);
 const audioState = createAudioState(regl);
 const lutManager = new Map();
 const getLutEntry = (id) => lutManager.get(id);
@@ -24,15 +32,6 @@ const getLutEntry = (id) => lutManager.get(id);
     } catch (e) { console.error('[output] lut restore', rec.id, e); }
   }
 })();
-import { createPipeline } from './render/pipeline.js';
-import { parseCube, uploadLutTexture } from './grade/lut.js';
-import { getLut as idbGetLut, listLuts } from './storage/idb.js';
-
-const canvas = document.getElementById('view');
-const fpsEl  = document.getElementById('fps');
-const syncEl = document.getElementById('sync-state');
-
-const regl = initRegl(canvas);
 const clock = createClock();
 const ch = makeChannel('output');
 const pipeline = createPipeline(regl);
