@@ -44,7 +44,18 @@ export async function initAudio(deviceId = null) {
       echoCancellation: false, noiseSuppression: false, autoGainControl: false,
     };
     if (deviceId) audioConstraints.deviceId = { exact: deviceId };
-    stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
+    } catch (e) {
+      // Saved deviceId may be stale (device gone, ID rotated between sessions, or
+      // test fixture left behind). Fall back to default rather than failing.
+      if (deviceId && (e.name === 'OverconstrainedError' || e.name === 'NotFoundError')) {
+        console.warn('[audio] saved deviceId not usable, falling back to default:', deviceId, e.name);
+        delete audioConstraints.deviceId;
+        stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
+        deviceId = null;
+      } else throw e;
+    }
     source = ctx.createMediaStreamSource(stream);
     if (!analyser) {
       analyser = ctx.createAnalyser();
