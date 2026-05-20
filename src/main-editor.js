@@ -10,7 +10,8 @@ import { attachSolid } from './layers/solid-layer.js';
 import { attachWebcam, emptyWebcamLayer } from './layers/webcam-layer.js';
 import { attachShader, emptyShaderLayer } from './layers/shader-layer.js';
 import { attachHydra, emptyHydraLayer } from './layers/hydra-layer.js';
-import { EFFECT_NAMES } from './layers/shader-effects.js';
+import { attachDancerImg, emptyDancerImgLayer, ingestPartImage, PART_KEYS, PART_LABELS } from './layers/dancer-img-layer.js?v=1';
+import { EFFECT_NAMES } from './layers/shader-effects.js?v=3';
 import { initAudio, tap as tapTempo, listAudioInputs, currentAudioDeviceId } from './audio/analyser.js';
 import { createAudioState } from './audio/uniforms.js';
 import { emptySnapshot, captureSnapshot, applySnapshot, djMorph } from './project/snapshots.js';
@@ -129,6 +130,7 @@ async function attachLayerRuntime(layer) {
     case 'webcam': return attachWebcam(regl, layer);
     case 'shader': return attachShader(regl, layer, audioState);
     case 'hydra':  return attachHydra(regl, layer);
+    case 'dancer-img': return attachDancerImg(regl, layer, audioState);
     default: throw new Error(`unknown layer type: ${layer.type}`);
   }
 }
@@ -273,7 +275,85 @@ function buildLayerRow(surface, layer, indexInStack) {
   if (layer.type === 'hydra') {
     li.append(buildHydraControls(layer));
   }
+  if (layer.type === 'dancer-img') {
+    li.append(buildDancerImgControls(layer));
+  }
   return li;
+}
+
+function buildDancerImgControls(layer) {
+  const wrap = document.createElement('div');
+  wrap.className = 'lkey';
+  const filePartInput = $('file-dancer-part');
+
+  // Per-part upload buttons. Each row spans BOTH columns of the .lkey grid
+  // (`grid-template-columns: 175px 175px` — meant for label/control pairs;
+  // our part rows are self-contained so they need full width).
+  for (const key of PART_KEYS) {
+    const row = document.createElement('div');
+    row.className = 'row';
+    row.style.cssText = 'display:flex; align-items:center; gap:8px; margin:3px 0; grid-column: 1 / -1; min-width:0;';
+
+    const lbl = document.createElement('span');
+    lbl.textContent = PART_LABELS[key];
+    lbl.style.cssText = 'min-width:60px; font-size:11px; opacity:0.7;';
+    row.append(lbl);
+
+    const btn = document.createElement('button');
+    btn.textContent = layer.parts[key]?.imageId ? 'replace' : 'upload';
+    btn.onclick = () => {
+      if (!filePartInput) return;
+      // route this click's file to the right part via a one-shot listener
+      filePartInput.value = '';
+      const onChange = async () => {
+        filePartInput.removeEventListener('change', onChange);
+        const file = filePartInput.files?.[0];
+        if (!file) return;
+        try {
+          await ingestPartImage(layer, key, file);
+          // reload the part's texture in the runtime without rebuilding the whole layer
+          const rt = layerRuntimes.get(layer.id);
+          if (rt?.reloadPart) {
+            await rt.reloadPart(key);
+          } else {
+            // Fallback: re-attach
+            try { rt?.dispose?.(); } catch {}
+            layerRuntimes.set(layer.id, await attachDancerImg(regl, layer, audioState));
+          }
+          store.update('', () => {});  // trigger re-render of UI
+        } catch (e) {
+          console.error('[dancer-img] upload failed', key, e);
+          alert('upload failed: ' + e.message);
+        }
+      };
+      filePartInput.addEventListener('change', onChange);
+      filePartInput.click();
+    };
+    row.append(btn);
+
+    const name = document.createElement('span');
+    name.textContent = layer.parts[key]?.name || '(empty)';
+    name.style.cssText = 'font-size:10px; opacity:0.5; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;';
+    row.append(name);
+
+    wrap.append(row);
+  }
+
+  wrap.append(label('audio intensity'));
+  if (layer.audioIntensity === undefined) layer.audioIntensity = 1.0;
+  wrap.append(rangeInput(layer, 'audioIntensity', 0, 3, 0.05));
+
+  wrap.append(label('width head'));
+  wrap.append(rangeInput(layer, 'widthHead', 0.02, 0.30, 0.005));
+  wrap.append(label('width limb'));
+  wrap.append(rangeInput(layer, 'widthLimb', 0.02, 0.20, 0.005));
+  wrap.append(label('width torso'));
+  wrap.append(rangeInput(layer, 'widthTorso', 0.04, 0.30, 0.005));
+
+  wrap.append(label('bg'));
+  wrap.append(colorArrInput(layer, 'bg'));
+
+  return wrap;
 }
 
 function buildShaderControls(layer) {
@@ -292,7 +372,7 @@ function buildShaderControls(layer) {
     store.update('', () => {
       layer.effect = sel.value;
       // re-init params to defaults of new effect
-      import('./layers/shader-effects.js').then(m => {
+      import('./layers/shader-effects.js?v=3').then(m => {
         layer.params = structuredClone(m.EFFECTS[sel.value].defaultParams);
         // re-attach runtime
         const old = layerRuntimes.get(layer.id);
@@ -304,8 +384,13 @@ function buildShaderControls(layer) {
   };
   wrap.append(sel);
 
+  // audio reactivity intensity — scales u_bass/mid/high/env going into the shader
+  wrap.append(label('audio intensity'));
+  if (layer.audioIntensity === undefined) layer.audioIntensity = 1.0;
+  wrap.append(rangeInput(layer, 'audioIntensity', 0, 3, 0.05));
+
   // params from current effect's schema
-  import('./layers/shader-effects.js').then(m => {
+  import('./layers/shader-effects.js?v=3').then(m => {
     const schema = m.EFFECTS[layer.effect]?.schema || [];
     for (const s of schema) {
       wrap.append(label(s.key));
@@ -604,6 +689,16 @@ async function addHydraLayer() {
   addLayerToSelectedOrNewSurface(layer);
 }
 
+async function addDancerImgLayer() {
+  const layerId = 'layer_' + crypto.randomUUID().slice(0, 8);
+  const layer = emptyDancerImgLayer(layerId);
+  let rt;
+  try { rt = await attachDancerImg(regl, layer, audioState); }
+  catch (e) { console.error('[editor] dancer-img attach', e); alert('dancer-img attach failed: ' + e.message); return; }
+  layerRuntimes.set(layer.id, rt);
+  addLayerToSelectedOrNewSurface(layer);
+}
+
 function addLayerToSelectedOrNewSurface(layer) {
   store.update('', (st) => {
     st.layers.push(layer);
@@ -630,6 +725,32 @@ const btnAudio     = document.getElementById('btn-enable-audio');
 if (btnAddWebcam) btnAddWebcam.onclick = () => addWebcamLayer();
 if (btnAddShader) btnAddShader.onclick = () => addShaderLayer(selShader?.value || 'fbm');
 if (btnAddHydra)  btnAddHydra.onclick  = () => addHydraLayer();
+const btnAddDancerImg = document.getElementById('btn-add-dancer-img');
+if (btnAddDancerImg) btnAddDancerImg.onclick = () => addDancerImgLayer();
+
+// Output resolution dropdown — controls the canvas backing-buffer size on the
+// output tab (decouples it from window size, needed for projector / Chromecast
+// / OBS NDI native-resolution pipelines).
+const selOutputRes = document.getElementById('output-res');
+if (selOutputRes) {
+  // initial: reflect current state.output
+  const initStr = (() => {
+    const o = store.state.output ?? { mode: 'fit' };
+    return o.mode === 'fixed' ? `${o.width}x${o.height}` : 'fit';
+  })();
+  selOutputRes.value = initStr;
+  selOutputRes.onchange = () => {
+    const v = selOutputRes.value;
+    store.update('', (st) => {
+      if (v === 'fit') st.output = { mode: 'fit', width: 1920, height: 1080 };
+      else {
+        const [w, h] = v.split('x').map(Number);
+        st.output = { mode: 'fixed', width: w, height: h };
+      }
+    });
+    broadcastState();
+  };
+}
 if (selShader) {
   selShader.innerHTML = '';
   for (const name of EFFECT_NAMES) {
@@ -1037,6 +1158,52 @@ if (btnPush) {
     setTimeout(() => btnPush.classList.remove('flash'), 200);
   };
 }
+
+// Preset scene dropdown — applies a full-screen audio-reactive showcase
+// (replaces surfaces + layers with the preset's bundle).
+import('./project/presets.js?v=1').then(({ PRESETS, PRESET_IDS }) => {
+  const selPreset = $('preset-scene');
+  if (!selPreset) return;
+  // Populate options (preserving the placeholder ◇)
+  for (const id of PRESET_IDS) {
+    const opt = document.createElement('option');
+    opt.value = id;
+    opt.textContent = PRESETS[id].name;
+    opt.title = PRESETS[id].description;
+    selPreset.appendChild(opt);
+  }
+  selPreset.onchange = async () => {
+    const id = selPreset.value;
+    if (!id) return;
+    const preset = PRESETS[id];
+    const { surfaces, layers } = preset.build();
+    console.log('[preset] applying', id, { surfaces: surfaces.length, layers: layers.length });
+    // Dispose all old runtimes; we're replacing layers wholesale.
+    for (const rt of layerRuntimes.values()) {
+      try { rt.dispose?.(); } catch {}
+    }
+    layerRuntimes.clear();
+    // Replace state
+    store.update('', (st) => {
+      st.surfaces = surfaces;
+      st.layers = layers;
+      st.ui.selectedSurfaceId = surfaces[0]?.id ?? null;
+      st.ui.selectedLayerId = null;
+    });
+    // Attach new runtimes
+    for (const layer of layers) {
+      try {
+        layerRuntimes.set(layer.id, await attachLayerRuntime(layer));
+      } catch (e) {
+        console.error('[preset] attach failed', layer.id, e);
+      }
+    }
+    syncUI();
+    broadcastState();  // immediate sync to output
+    // Reset dropdown to placeholder so user can pick same preset again later
+    selPreset.value = '';
+  };
+});
 // Also expose for devtools console use
 window.__broadcastState = broadcastState;
 

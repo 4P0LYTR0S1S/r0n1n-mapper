@@ -2,6 +2,29 @@
 
 All notable changes to r0n1n-mapper. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning is [SemVer](https://semver.org/) with calver-style date stamps for pre-1.0 milestones.
 
+## [0.3.0] — 2026-05-21
+
+Feature drop. Wire-frame procedural dancer + uploadable-body-part dancer + 6 full-screen audio-reactive preset scenes + fixed output canvas resolution. Per-shader-layer audio intensity scaling. Dev-loop infrastructure: threaded no-cache HTTP server + push button for cases the auto-broadcast misses.
+
+### Added
+
+- **Wire Frame Dancer (`dancer` shader effect)** — procedural SDF skeleton with hip / spine / shoulders / arms / legs / head / neck. BPM-locked phase clock, bass-driven squat, mid-driven swing, high-driven jitter, beat-driven joint flash. 11 capsule bones + glowing joints. Lives in `src/layers/shader-effects.js`. Default params: cyan bones, magenta joints, near-black-blue bg.
+- **Dancer-Image layer (`dancer-img`)** — 6 uploadable body-part sprites (HEAD, TORSO, ARM L, ARM R, LEG L, LEG R) driven by the same audio-reactive joint math as the SDF dancer. Each part is a textured rectangle whose anchor / rotation / scale is computed from joint positions every frame. Upload PNG/JPG per slot via the layer panel; images persist in IndexedDB. Per-part `replace` mid-session. Audio intensity slider + width controls per body part. v1 ships with rigid sprites (no elbow/knee bend) — mesh-deformed limbs queued for a future release.
+- **Preset scenes dropdown** — 6 full-screen showcases in the topbar: `◉ Dancer Void`, `✚ Neon Cathedral`, `┃ Spectrum Rain`, `⌇ Plasma Storm`, `≈ Deep Noise`, `◯ Cyber Galactic`. Each applies a complete `{ surfaces, layers }` state (1 full-canvas surface, 2-3 stacked layers tuned for blend mode + audio intensity). `src/project/presets.js`.
+- **Fixed output canvas resolution** — new topbar `⌗ resolution` dropdown decouples the output-tab canvas backing buffer from the window size. Options: `fit window` (legacy), `1080p`, `1440p`, `4K`. Letterboxes via CSS `object-fit: contain`. Required for projector / Chromecast / OBS NDI pipelines that need exact pixel mapping. Schema bumped v6 → v7 with backfill migration. README has a new `Output resolution & casting` table documenting the Chromecast 1080p/30fps cap.
+- **Per-shader-layer audio intensity slider** — `layer.audioIntensity` (0…3, default 1) multiplies `u_bass / u_mid / u_high / u_env / u_beat` going into the shader. Dial down for a chill layer, dial up for a strobing one without editing the shader.
+- **`dev-serve.py`** — `ThreadingHTTPServer` with `Cache-Control: no-store` + `SO_REUSEADDR / SO_REUSEPORT`. Replaces `python3 -m http.server` for development; module edits picked up on plain Ctrl+R instead of hard-refresh, multiple concurrent connections (editor + output tabs in parallel) no longer stall.
+- **Topbar `↺ push` button** — manual force-send of `state:full` to the output tab. Already shipped quietly in v0.2.1 but was untitled; now has a tooltip.
+- **`docs/EFFECTS_BACKLOG.md`** — research-swarm output: 5 novel music-reactive effect specs queued for future releases (Spectral Terrain, Feedback Slime, Formant Veil, ASCII Spectrum Rain, Drift Weave).
+
+### Fixed
+
+- **dancer-img layer panel bleed** — the per-part upload rows were occupying single cells of the parent `.lkey` grid (which is `grid-template-columns: 175px 175px` for label/control pairs), so 3 of the 6 rows landed in the right column and overflowed the sidebar into the canvas area. Now `grid-column: 1 / -1` so each row spans the full panel width.
+
+### Changed
+
+- **Schema `v6 → v7`** — `state.output` gains a `mode: 'fit' | 'fixed'` field. Old `v6` projects auto-migrate; the field backfills to `{ mode: 'fit', width: 1920, height: 1080 }` on load. No user action required.
+
 ## [0.2.2] — 2026-05-21
 
 Audio resilience hotfix. Output tab gains its own microphone path because Chrome aggressively throttles background tabs — when the output window sat behind the editor (or sat on a second display Chrome considered "inactive"), its rAF clock slowed to ~1 Hz and any audio sourced via editor-side broadcast was effectively dead. The output now requests its own `getUserMedia` so audio reactivity survives whichever tab loses focus. Also widens the cross-tab audio plumbing so the broadcast path stays available as a future fallback.

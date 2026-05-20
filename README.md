@@ -49,6 +49,25 @@ Verify your browser before doing anything else: `http://localhost:8765/compat.ht
 9. **Record** — red record button captures the editor canvas to a WebM you can drop into your DAW or editor.
 10. **Open the output tab** for the clean projector feed. Drag it to your second display and fullscreen with `F`.
 
+### Output resolution & casting
+
+The topbar's **output resolution** dropdown decouples the canvas backing buffer
+from the window size:
+
+- **fit window** — backing buffer matches the window × devicePixelRatio (default; good for previewing locally)
+- **1080p / 1440p / 4K** — backing buffer locked to the chosen size; CSS letterboxes it inside the window
+
+Use a **fixed** resolution any time the output feed leaves the laptop:
+
+| transport | recommended setting | notes |
+|---|---|---|
+| HDMI cable to projector | fixed → projector's native res | <20 ms latency, 1:1 pixel mapping |
+| OBS / NDI sidecar capture | fixed → 1080p or 4K | OBS sees the canvas at native res |
+| Chromecast "Cast tab" | fixed → 1080p | **Chrome caps tab-cast at 1080p / 30 fps regardless of canvas size** — this is a Chrome limitation, not ours. In the cast dialog, click the gear icon → set tab-capture quality to "high". |
+| Chromecast "Cast desktop" | fixed → matches OS display | can exceed 1080p but uses OS scaling; higher latency than tab cast |
+
+Bottom line: HDMI for live performance, fixed 1080p + tab cast for chill / rehearsal, OBS NDI for studio recording.
+
 ## Research Context
 
 Projection mapping software is dominated by commercial native apps —

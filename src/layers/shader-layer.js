@@ -2,7 +2,7 @@
 // each frame. Exposes the FBO's color attachment as the layer texture for
 // the compositor to read.
 
-import { EFFECTS } from './shader-effects.js';
+import { EFFECTS } from './shader-effects.js?v=3';
 
 export function emptyShaderLayer(id, effect = 'fbm') {
   const meta = EFFECTS[effect];
@@ -32,11 +32,13 @@ export function attachShader(regl, layer, audioState) {
   const uniforms = {
     u_time: () => performance.now() / 1000 - startTime,
     u_res:  () => [W, H],
-    u_bass: () => audioState?.uniforms?.bass ?? 0,
-    u_mid:  () => audioState?.uniforms?.mid  ?? 0,
-    u_high: () => audioState?.uniforms?.high ?? 0,
-    u_env:  () => audioState?.uniforms?.env  ?? 0,
-    u_beat: () => audioState?.uniforms?.beat ?? 0,
+    // audioIntensity (per-layer, default 1.0) scales reactive bands so the
+    // effect can be dialed up/down without editing the shader.
+    u_bass: () => (audioState?.uniforms?.bass ?? 0) * (layer.audioIntensity ?? 1),
+    u_mid:  () => (audioState?.uniforms?.mid  ?? 0) * (layer.audioIntensity ?? 1),
+    u_high: () => (audioState?.uniforms?.high ?? 0) * (layer.audioIntensity ?? 1),
+    u_env:  () => (audioState?.uniforms?.env  ?? 0) * (layer.audioIntensity ?? 1),
+    u_beat: () => (audioState?.uniforms?.beat ?? 0) * (layer.audioIntensity ?? 1),
     u_bpm:  () => audioState?.uniforms?.bpm  ?? 0,
     u_fft:  () => audioState?.fftTexture ?? regl.texture({ width: 1, height: 1, format: 'luminance', type: 'uint8' }),
   };

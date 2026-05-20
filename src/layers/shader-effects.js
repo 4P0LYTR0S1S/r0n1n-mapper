@@ -181,6 +181,134 @@ const RAYMARCH_FRAG = `${COMMON}
   }
 `;
 
+// Wire Frame Dancer — procedural stick figure animated by audio bands.
+//   u_bass    → hip vertical bounce + knee bend (kick = squat)
+//   u_mid     → shoulder/elbow swing amplitude (torso sway)
+//   u_high    → wrist/ankle jitter (hi-hat = twitch)
+//   u_beat    → joint flash + 1-frame limb-length pop
+//   u_bpm     → phase clock for limb sway (locks dance to grid)
+//   u_env     → overall figure scale
+// Params:
+//   bones (color)  — tint of bones
+//   joints (color) — tint of joints (also drives beat flash)
+//   bg (color)     — background fill
+//   thick (float)  — bone capsule thickness in screen-uv units
+const DANCER_FRAG = `
+  precision highp float;
+  varying vec2 v_uv;
+  uniform vec2 u_res;
+  uniform float u_time;
+  uniform float u_bass;
+  uniform float u_mid;
+  uniform float u_high;
+  uniform float u_env;
+  uniform float u_beat;
+  uniform float u_bpm;
+  uniform vec3  u_bones;
+  uniform vec3  u_joints;
+  uniform vec3  u_bg;
+  uniform float u_thick;
+
+  const float TAU = 6.2831853;
+
+  float sdSegment(vec2 p, vec2 a, vec2 b, float r) {
+    vec2 pa = p - a, ba = b - a;
+    float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
+    return length(pa - ba * h) - r;
+  }
+  float hash21(vec2 p) {
+    p = fract(p * vec2(123.34, 456.21));
+    p += dot(p, p + 45.32);
+    return fract(p.x * p.y);
+  }
+  vec2 hash22(vec2 p) { return vec2(hash21(p), hash21(p + 17.0)); }
+
+  void main() {
+    // aspect-correct uv centered on figure, y up
+    vec2 uv = v_uv;
+    uv.x = (uv.x - 0.5) * (u_res.x / u_res.y) + 0.5;
+
+    // phase clock: locks to BPM when present, else free-runs at 2Hz
+    float bpm = max(u_bpm, 90.0);
+    float phi = u_time * (bpm / 60.0) * TAU * 0.25;  // quarter-note dance bounce
+
+    // Figure scale grows slightly with envelope
+    float scale = (0.40 + u_env * 0.05) / (1.0 + 0.2 * u_bass);
+
+    // Anchor at lower-center; bass pushes hips DOWN (squat into kick)
+    vec2 root = vec2(0.5, 0.30);
+    float bounce = sin(phi) * 0.018 - u_bass * 0.045;
+    vec2 hip   = root + vec2(0.0, scale * 0.20 + bounce);
+    vec2 spine = hip  + vec2(sin(phi * 0.5) * 0.015 * u_mid, scale * 0.20);
+    vec2 shldr = spine + vec2(0.0, scale * 0.10);
+    vec2 head  = shldr + vec2(sin(phi * 0.5) * 0.012, scale * 0.10 + u_env * 0.015);
+
+    // Arms — left and right phase-offset by π (natural opposite-arm swing)
+    float armSwingL = sin(phi + 3.14159) * (0.35 + u_mid * 1.0);
+    float armSwingR = sin(phi)           * (0.35 + u_mid * 1.0);
+    vec2 shldrL = shldr + vec2(-scale * 0.07, 0.0);
+    vec2 shldrR = shldr + vec2( scale * 0.07, 0.0);
+    vec2 elbowL = shldrL + vec2(-scale * 0.05, -scale * 0.10) * (1.0 + 0.4 * armSwingL);
+    vec2 elbowR = shldrR + vec2( scale * 0.05, -scale * 0.10) * (1.0 + 0.4 * armSwingR);
+    vec2 wristL = elbowL + vec2(-scale * 0.03 + sin(phi * 1.7) * 0.02, -scale * 0.08)
+                  + hash22(vec2(phi, 1.0)) * 0.012 * u_high;
+    vec2 wristR = elbowR + vec2( scale * 0.03 + sin(phi * 1.7) * 0.02, -scale * 0.08)
+                  + hash22(vec2(phi, 2.0)) * 0.012 * u_high;
+
+    // Legs — opposite phase to arms for walking-style gait
+    float legSwingL = sin(phi)           * (0.20 + u_mid * 0.4);
+    float legSwingR = sin(phi + 3.14159) * (0.20 + u_mid * 0.4);
+    // Knee bend deepens with bass — proper squat on kicks
+    float kneeBend = 0.5 + u_bass * 0.4;
+    vec2 hipL = hip + vec2(-scale * 0.05, 0.0);
+    vec2 hipR = hip + vec2( scale * 0.05, 0.0);
+    vec2 kneeL = hipL + vec2(-scale * 0.04 + legSwingL * scale * 0.06, -scale * 0.13 * kneeBend);
+    vec2 kneeR = hipR + vec2( scale * 0.04 + legSwingR * scale * 0.06, -scale * 0.13 * kneeBend);
+    vec2 ankleL = kneeL + vec2(-scale * 0.02 + legSwingL * scale * 0.04, -scale * 0.13 * kneeBend)
+                  + hash22(vec2(phi, 3.0)) * 0.008 * u_high;
+    vec2 ankleR = kneeR + vec2( scale * 0.02 + legSwingR * scale * 0.04, -scale * 0.13 * kneeBend)
+                  + hash22(vec2(phi, 4.0)) * 0.008 * u_high;
+
+    // Bones — union of capsule SDFs
+    float t = u_thick * (1.0 + 0.3 * u_beat);
+    float d = 1e9;
+    d = min(d, sdSegment(uv, hip, spine, t));          // lower spine
+    d = min(d, sdSegment(uv, spine, shldr, t));        // upper spine
+    d = min(d, sdSegment(uv, shldr, head, t));         // neck
+    d = min(d, sdSegment(uv, shldrL, elbowL, t));      // upper arm L
+    d = min(d, sdSegment(uv, elbowL, wristL, t));      // forearm L
+    d = min(d, sdSegment(uv, shldrR, elbowR, t));      // upper arm R
+    d = min(d, sdSegment(uv, elbowR, wristR, t));      // forearm R
+    d = min(d, sdSegment(uv, hipL, kneeL, t));         // thigh L
+    d = min(d, sdSegment(uv, kneeL, ankleL, t));       // shin L
+    d = min(d, sdSegment(uv, hipR, kneeR, t));         // thigh R
+    d = min(d, sdSegment(uv, kneeR, ankleR, t));       // shin R
+
+    // Head — solid disc
+    float dHead = length(uv - head) - scale * 0.06;
+    d = min(d, dHead);
+
+    // AA bone mask
+    float bone = smoothstep(0.003, 0.0, d);
+
+    // Joint glows — bigger on beat
+    float jointR = scale * 0.018 * (1.0 + u_beat * 1.5);
+    float joints = 0.0;
+    joints = max(joints, smoothstep(jointR, 0.0, length(uv - elbowL)));
+    joints = max(joints, smoothstep(jointR, 0.0, length(uv - elbowR)));
+    joints = max(joints, smoothstep(jointR, 0.0, length(uv - kneeL)));
+    joints = max(joints, smoothstep(jointR, 0.0, length(uv - kneeR)));
+    joints = max(joints, smoothstep(jointR, 0.0, length(uv - shldr)));
+    joints = max(joints, smoothstep(jointR, 0.0, length(uv - hip)));
+
+    vec3 col = u_bg;
+    col = mix(col, u_bones, bone);
+    col = mix(col, u_joints, joints * (0.6 + u_beat));
+
+    gl_FragColor = vec4(col, 1.0);
+  }
+`;
+
 // Effect registry. Each entry: { frag, vert?, defaultParams, paramSchema }
 export const EFFECTS = {
   fbm: {
@@ -225,6 +353,21 @@ export const EFFECTS = {
     frag: RAYMARCH_FRAG, vert: VERT,
     defaultParams: {},
     schema: [],
+  },
+  dancer: {
+    frag: DANCER_FRAG, vert: VERT,
+    defaultParams: {
+      bones:  [0.0, 1.0, 0.66],
+      joints: [1.0, 0.66, 0.20],
+      bg:     [0.02, 0.0, 0.05],
+      thick:  0.008,
+    },
+    schema: [
+      { key: 'bones',  type: 'color' },
+      { key: 'joints', type: 'color' },
+      { key: 'bg',     type: 'color' },
+      { key: 'thick',  type: 'range', min: 0.002, max: 0.020, step: 0.0005 },
+    ],
   },
 };
 

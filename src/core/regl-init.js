@@ -32,7 +32,22 @@ export function initRegl(canvas) {
   return regl;
 }
 
-export function fitCanvas(canvas) {
+// fitCanvas — resizes the canvas backing buffer.
+//   config: undefined → fit window (legacy)
+//           { mode: 'fit' }                → fit window
+//           { mode: 'fixed', width, height } → set backing buffer to exact pixel size
+//
+// Fixed mode is what you want for projector / Chromecast / OBS NDI — the GL
+// buffer is rendered at native projector resolution regardless of how big the
+// browser window is, then CSS scales the display element with object-fit:contain.
+export function fitCanvas(canvas, config) {
+  if (config && config.mode === 'fixed' && config.width && config.height) {
+    if (canvas.width !== config.width || canvas.height !== config.height) {
+      canvas.width = config.width;
+      canvas.height = config.height;
+    }
+    return;
+  }
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const w = Math.floor(canvas.clientWidth * dpr);
   const h = Math.floor(canvas.clientHeight * dpr);

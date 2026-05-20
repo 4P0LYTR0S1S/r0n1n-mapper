@@ -20,7 +20,16 @@
   <div class="actions">
     <button id="btn-add-surface">+ surface</button>
     <button id="btn-output">open output</button>
+    <select id="output-res" title="output canvas backing-buffer size (fixed sizes decouple from window — needed for projector / Chromecast / OBS NDI)">
+      <option value="fit">⌗ fit window</option>
+      <option value="1920x1080">⌗ 1080p</option>
+      <option value="2560x1440">⌗ 1440p</option>
+      <option value="3840x2160">⌗ 4K</option>
+    </select>
     <button id="btn-push" title="manually push state to output tab">↺ push</button>
+    <select id="preset-scene" title="apply a full-screen audio-reactive showcase">
+      <option value="">◇ preset…</option>
+    </select>
     <button id="btn-save">save</button>
     <button id="btn-load">load</button>
     <button id="btn-export">export</button>
@@ -87,6 +96,8 @@
       <button id="btn-add-shader">+ shader</button>
       <select id="shader-effect"></select>
       <button id="btn-add-hydra">+ hydra</button>
+      <button id="btn-add-dancer-img" title="dancer with uploadable body parts">+ dancer img</button>
+      <input id="file-dancer-part" type="file" accept="image/*" hidden />
     </div>
   </section>
 
@@ -165,6 +176,6 @@
 <input id="file-video"  type="file" accept="video/mp4,video/webm" hidden />
 <input id="file-image"  type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden />
 
-<script type="module" src="src/main-editor.js"></script>
+<script type="module" src="src/main-editor.js?v=7"></script>
 </body>
 </html>

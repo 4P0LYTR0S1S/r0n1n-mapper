@@ -8,6 +8,7 @@ import { attachSolid } from './layers/solid-layer.js';
 import { attachWebcam } from './layers/webcam-layer.js';
 import { attachShader } from './layers/shader-layer.js';
 import { attachHydra } from './layers/hydra-layer.js';
+import { attachDancerImg } from './layers/dancer-img-layer.js?v=1';
 import { createAudioState } from './audio/uniforms.js';
 import { initAudio } from './audio/analyser.js';
 import { createPipeline } from './render/pipeline.js';
@@ -49,6 +50,7 @@ async function attachLayerRuntime(layer) {
     case 'webcam': return attachWebcam(regl, layer);
     case 'shader': return attachShader(regl, layer, audioState);
     case 'hydra':  return attachHydra(regl, layer);
+    case 'dancer-img': return attachDancerImg(regl, layer, audioState);
     default: throw new Error(`unknown layer type: ${layer.type}`);
   }
 }
@@ -116,7 +118,8 @@ canvas.addEventListener('click', () => {
 }, { once: true });
 
 function frame() {
-  fitCanvas(canvas);
+  fitCanvas(canvas, state.output);
+  document.body.classList.toggle('fixed-output', state.output?.mode === 'fixed');
   const { fps, t } = clock.tick();
   regl.poll();
 
@@ -135,6 +138,6 @@ requestAnimationFrame(frame);
 window.__r0n1n = {
   get state() { return state; },
   get runtimes() { return layerRuntimes; },
-  forceFrame() { fitCanvas(canvas); regl.poll(); pipeline.render(state, layerRuntimes); return 'rendered'; },
+  forceFrame() { fitCanvas(canvas, state.output); regl.poll(); pipeline.render(state, layerRuntimes); return 'rendered'; },
   surfaceCount() { return state.surfaces.length; },
 };

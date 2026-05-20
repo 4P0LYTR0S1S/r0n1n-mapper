@@ -4,13 +4,13 @@
 import { defaultMeshPoints, DEFAULT_GRID_X, DEFAULT_GRID_Y } from '../surface/warp-mesh.js';
 import { defaultKey } from '../keyer/keyer-glsl.js';
 
-export const SCHEMA_VERSION = 6;
+export const SCHEMA_VERSION = 7;
 
 export function emptyProject() {
   return {
     version: SCHEMA_VERSION,
     name: 'untitled',
-    output: { width: 1920, height: 1080 },
+    output: { mode: 'fit', width: 1920, height: 1080 },
     ui: { selectedSurfaceId: null, selectedLayerId: null, mode: 'edit' },
     surfaces: [],
     layers: [],
@@ -164,6 +164,16 @@ const MIGRATIONS = {
       version: 6,
       audio:  proj.audio  ?? { deviceId: null },
       djMode: proj.djMode ?? { enabled: false, deckASnapId: null, deckBSnapId: null, value: 0.0 },
+    };
+  },
+  6: (proj) => {
+    // v6 → v7: output.mode ('fit' | 'fixed') decouples canvas backing buffer
+    // size from the window, so projector / Chromecast pipelines stop downsampling.
+    const prev = proj.output ?? { width: 1920, height: 1080 };
+    return {
+      ...proj,
+      version: 7,
+      output: { mode: prev.mode ?? 'fit', width: prev.width ?? 1920, height: prev.height ?? 1080 },
     };
   },
 };

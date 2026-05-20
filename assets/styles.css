@@ -118,6 +118,19 @@ body.dragging #drop-hint { display: flex; border-color: var(--accent); color: va
 /* ---- output layout ---- */
 body[data-tab="output"] { background: #000; cursor: none; }
 body[data-tab="output"] #view { width: 100vw; height: 100vh; display: block; }
+/* fixed-resolution mode: backing buffer is exact pixels (e.g. 1920×1080);
+   CSS letterboxes the canvas inside the window so the projector / Chromecast
+   pipeline sees native res. */
+body[data-tab="output"].fixed-output {
+  display: flex; align-items: center; justify-content: center;
+  margin: 0; padding: 0; min-height: 100vh;
+}
+body[data-tab="output"].fixed-output #view {
+  width: auto; height: auto;
+  max-width: 100vw; max-height: 100vh;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
 body[data-tab="output"] #hud {
   position: fixed; bottom: 8px; right: 12px;
   color: rgba(255,255,255,0.18); font-size: 10px;
