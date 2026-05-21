@@ -2,6 +2,79 @@
 
 All notable changes to r0n1n-mapper. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning is [SemVer](https://semver.org/) with calver-style date stamps for pre-1.0 milestones.
 
+## [0.4.0] — 2026-05-22
+
+**Self-Demoing + Dancer Builder.** The tool now records its own demos and the
+image-dancer becomes tunable per-body-part. Plus a global slider-drag fix
+(regression caught mid-batch), animated title text, and live-performance
+keyboard shortcuts for snapshot scenes.
+
+### Added
+
+- **Title / typewriter layer** (`+ title` in the topbar). New layer type that
+  rasterizes a configurable string to a 2D canvas, uploads it as a regl texture,
+  and renders with audio-reactive bloom (bass-driven), chromatic aberration
+  (high-driven), and BPM-locked character-by-character reveal. Four reveal modes
+  (instant / char-by-char / word-by-word / fade-in). Live-edit the text in a
+  debounced text input; rotation, scale, x/y position, glow and color all
+  per-layer. Sits in `src/layers/title-layer.js`.
+- **MediaRecorder on the output tab** — `r` / `R` key starts and stops a
+  `MediaRecorder` on the output canvas at 60 fps. Mic audio is muxed in if
+  the output tab has engaged audio (`a` key). Pulsing red `● rec` indicator
+  appears in the HUD while recording. Stop downloads
+  `r0n1n-output-<ISO timestamp>.webm` to the user's Downloads. The tool now
+  demos itself with one keystroke; no external screen recorder needed.
+- **HUD toggle on output** — `h` / `H` hides the fps / sync / rec overlay so
+  the projection wall stays clean for performance / capture.
+- **Snapshot hotkeys 1–9** — pressing a digit recalls the snapshot in that
+  slot; `Shift+digit` saves the current state into that slot. Uses the
+  existing 16-slot snapshot infrastructure; ignored while focus is in any
+  text / select input. Live-performance ergonomics.
+- **`docs/DANCER_BODY_PARTS.md`** — best-practice guide for preparing body
+  part images (connection-point-at-top convention, PNG transparency,
+  per-part adjustment cheatsheet, recommended workflow).
+- **Dancer-img per-part overrides** — each of the 6 body parts (head / torso /
+  arm L / arm R / leg L / leg R) gains a collapsible `<details>` panel with
+  six controls: `rotation°`, `length` (multiplier on bone length), `width`
+  (multiplier on layer base width), `offsetX` / `offsetY` (slide along
+  canvas UV), `flipX` / `flipY` (mirror checkboxes). Lets users tune any
+  uploaded sprite without re-exporting from an image editor.
+- **`getAudioStream()` export** from `src/audio/analyser.js` — exposes the
+  live mic `MediaStream` so the output-tab MediaRecorder can mux audio
+  alongside the canvas video.
+
+### Fixed
+
+- **Global slider drag regression** (`src/main-editor.js`). Every range input
+  in the editor was firing `oninput` → `store.update` → `store.subscribe` →
+  `syncUI()`, which rebuilt the entire sidebar DOM from scratch — including
+  the slider element being dragged. The pointer-capture target was destroyed
+  mid-drag, so every drag turned into a single tap (one event before the
+  element vanished). Fix: a global `isDragging` flag plus an `attachDragGuard()`
+  helper. `syncUI()` defers while drag is active and runs once on the
+  window-level `pointerup` event. Applied to both `rangeInput` (per-effect
+  param sliders) and `opacityRange` (per-layer opacity).
+- **Output tab banner stickiness** (`src/main-output.js`). The "audio live /
+  F = fullscreen" status text I repurposed in v0.2.2 stayed pinned on the
+  projection when sync briefly went stale (>1.5s without an editor broadcast)
+  — `body.live` would drop and the banner would reappear with the repurposed
+  text. Fix: removes the `#idle` element from the DOM entirely once audio is
+  engaged; it can no longer reappear.
+- **Sidebar horizontal overflow** when many `+ <layer>` add-buttons fit in a
+  single `.row`. `flex-wrap: wrap` on `#panel .row` so they cleanly drop to
+  the next line as the panel narrows. Future-proof for new layer types.
+
+### Changed
+
+- **Audio device picker always visible after engagement** (`src/main-editor.js`).
+  Previously hidden when ≤ 1 input device — but users couldn't see which
+  device was selected, and couldn't pick a Stereo Mix / loopback if one
+  appeared later. Now hidden only when zero inputs.
+- **CSS focus highlight on range sliders** (`assets/styles.css`). A 2px accent
+  outline on `input[type="range"]:focus` so the keyboard-focused slider is
+  visible (arrow keys nudge by `step` natively). `touch-action: none`
+  prevents touchscreen pan-y from stealing the drag gesture.
+
 ## [0.3.0] — 2026-05-21
 
 Feature drop. Wire-frame procedural dancer + uploadable-body-part dancer + 6 full-screen audio-reactive preset scenes + fixed output canvas resolution. Per-shader-layer audio intensity scaling. Dev-loop infrastructure: threaded no-cache HTTP server + push button for cases the auto-broadcast misses.

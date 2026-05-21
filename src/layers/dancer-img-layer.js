@@ -15,9 +15,24 @@ export const PART_LABELS = {
   legL: 'LEG L', legR: 'LEG R',
 };
 
+function defaultPart() {
+  return {
+    imageId: null,
+    name: '',
+    // per-part overrides on top of the auto-computed transform
+    rotation: 0,      // degrees, added to bone-derived rotation
+    scale: 1.0,       // multiplier on bone length (height of sprite)
+    widthScale: 1.0,  // multiplier on the layer's base width (head/limb/torso)
+    offsetX: 0,       // offset added to anchor in canvas UV (-0.3 to 0.3)
+    offsetY: 0,
+    flipX: false,     // mirror image horizontally
+    flipY: false,     // mirror image vertically (use if uploaded upside down)
+  };
+}
+
 export function emptyDancerImgLayer(id) {
   const parts = {};
-  for (const k of PART_KEYS) parts[k] = { imageId: null, name: '' };
+  for (const k of PART_KEYS) parts[k] = defaultPart();
   return {
     id,
     type: 'dancer-img',
@@ -28,10 +43,24 @@ export function emptyDancerImgLayer(id) {
     parts,
     bg: [0.0, 0.0, 0.0],
     audioIntensity: 1.0,
-    widthHead: 0.10,    // sprite width relative to canvas
+    widthHead: 0.10,    // base sprite width relative to canvas
     widthLimb: 0.06,    // arm/leg sprite width
     widthTorso: 0.14,
   };
+}
+
+// Defensive default-fill so old projects (without per-part overrides) still
+// render. Mutates the layer in place; called on attach.
+export function fillPartDefaults(layer) {
+  for (const k of PART_KEYS) {
+    if (!layer.parts[k]) layer.parts[k] = defaultPart();
+    else {
+      const d = defaultPart();
+      for (const f of Object.keys(d)) {
+        if (layer.parts[k][f] === undefined) layer.parts[k][f] = d[f];
+      }
+    }
+  }
 }
 
 async function sha256Hex(buffer) {
@@ -100,30 +129,49 @@ function computeJoints(t, audio, intensity) {
 }
 
 // Compute transform for a part rendered between two joints (start = top of
-// image, end = bottom). Returns { anchor, rotation, size }.
-//   anchor — midpoint in UV
-//   rotation — radians; quad's local +Y will point from end → start
-//   size — [width, height], height = length(start, end)
-function spriteFromBones(start, end, width) {
-  const dx = end[0] - start[0];
-  const dy = end[1] - start[1];
-  const length = Math.hypot(dx, dy);
-  // We want the quad's local +Y axis to point from end→start (image top = start).
-  // Angle of (start - end) from +X:
+// image, end = bottom). Applies the per-part overrides on top of the
+// auto-computed transform.
+//
+//   start/end — joint positions in canvas UV
+//   baseWidth — the layer's base width for this part class (head/limb/torso)
+//   ov        — per-part override block (rotation/scale/widthScale/offsetX/Y/flipX/Y)
+//
+// Returns { anchor, rotation, size, flipX, flipY }.
+function spriteFromBones(start, end, baseWidth, ov) {
+  const baseLength = Math.hypot(end[0] - start[0], end[1] - start[1]);
+  const length = baseLength * (ov?.scale ?? 1);
+  // Quad's local +Y should point from end→start (image top = start).
   const angle = Math.atan2(start[1] - end[1], start[0] - end[0]);
-  // Quad's local +Y is at angle π/2 from local +X; we want world rotation such
-  // that local +Y becomes the world (start-end) direction.
-  const rotation = angle - Math.PI / 2;
-  const anchor = [(start[0] + end[0]) * 0.5, (start[1] + end[1]) * 0.5];
-  return { anchor, rotation, size: [width, length] };
+  const rotation = angle - Math.PI / 2 + (ov?.rotation ?? 0) * Math.PI / 180;
+  const anchor = [
+    (start[0] + end[0]) * 0.5 + (ov?.offsetX ?? 0),
+    (start[1] + end[1]) * 0.5 + (ov?.offsetY ?? 0),
+  ];
+  return {
+    anchor,
+    rotation,
+    size: [baseWidth * (ov?.widthScale ?? 1), length],
+    flipX: ov?.flipX ? 1 : 0,
+    flipY: ov?.flipY ? 1 : 0,
+  };
 }
 
-// Head is a special case — no rotation, scaled by figure size.
-function spriteFromHead(headPos, scale, width) {
-  return { anchor: headPos, rotation: 0, size: [width, width * 1.1] };
+// Head — anchor centered on head joint. No auto-rotation but accepts the
+// per-part rotation override + width-aspect-ratio.
+function spriteFromHead(headPos, _figureScale, baseWidth, ov) {
+  const w = baseWidth * (ov?.widthScale ?? 1);
+  const h = w * 1.1 * (ov?.scale ?? 1);
+  return {
+    anchor: [headPos[0] + (ov?.offsetX ?? 0), headPos[1] + (ov?.offsetY ?? 0)],
+    rotation: (ov?.rotation ?? 0) * Math.PI / 180,
+    size: [w, h],
+    flipX: ov?.flipX ? 1 : 0,
+    flipY: ov?.flipY ? 1 : 0,
+  };
 }
 
 export async function attachDancerImg(regl, layer, audioState) {
+  fillPartDefaults(layer);
   const W = 1024, H = 1024;
   const colorTex = regl.texture({
     width: W, height: H, min: 'linear', mag: 'linear', wrap: 'clamp',
@@ -167,17 +215,21 @@ export async function attachDancerImg(regl, layer, audioState) {
       uniform vec2 u_anchor;
       uniform float u_rotation;
       uniform vec2 u_size;
+      uniform float u_flipX;
+      uniform float u_flipY;
       varying vec2 v_uv;
       void main() {
         // a_pos in [-0.5, +0.5] for both axes
-        v_uv = a_pos + 0.5;
+        vec2 uv = a_pos + 0.5;
+        if (u_flipX > 0.5) uv.x = 1.0 - uv.x;
+        if (u_flipY > 0.5) uv.y = 1.0 - uv.y;
+        v_uv = uv;
         vec2 scaled = a_pos * u_size;
         float c = cos(u_rotation), s = sin(u_rotation);
         vec2 rot = vec2(c * scaled.x - s * scaled.y,
                         s * scaled.x + c * scaled.y);
         vec2 pos = u_anchor + rot;
         vec2 clip = pos * 2.0 - 1.0;
-        // FBO y-up — keep clip.y as-is since textures load with flipY=true
         gl_Position = vec4(clip, 0.0, 1.0);
       }
     `,
@@ -202,6 +254,8 @@ export async function attachDancerImg(regl, layer, audioState) {
       u_rotation: regl.prop('rotation'),
       u_size:     regl.prop('size'),
       u_tex:      regl.prop('tex'),
+      u_flipX:    regl.prop('flipX'),
+      u_flipY:    regl.prop('flipY'),
     },
     count: 6,
     depth: { enable: false },
@@ -235,12 +289,13 @@ export async function attachDancerImg(regl, layer, audioState) {
 
       // Draw parts back-to-front: legs → torso → arms → head
       const drawCalls = [];
-      if (textures.legL)  drawCalls.push({ ...spriteFromBones(j.hipL,   j.ankleL, layer.widthLimb),  tex: textures.legL });
-      if (textures.legR)  drawCalls.push({ ...spriteFromBones(j.hipR,   j.ankleR, layer.widthLimb),  tex: textures.legR });
-      if (textures.torso) drawCalls.push({ ...spriteFromBones(j.hip,    j.shldr,  layer.widthTorso), tex: textures.torso });
-      if (textures.armL)  drawCalls.push({ ...spriteFromBones(j.shldrL, j.wristL, layer.widthLimb),  tex: textures.armL });
-      if (textures.armR)  drawCalls.push({ ...spriteFromBones(j.shldrR, j.wristR, layer.widthLimb),  tex: textures.armR });
-      if (textures.head)  drawCalls.push({ ...spriteFromHead(j.head,    j.scale,  layer.widthHead),  tex: textures.head });
+      const p = layer.parts;
+      if (textures.legL)  drawCalls.push({ ...spriteFromBones(j.hipL,   j.ankleL, layer.widthLimb,  p.legL),  tex: textures.legL });
+      if (textures.legR)  drawCalls.push({ ...spriteFromBones(j.hipR,   j.ankleR, layer.widthLimb,  p.legR),  tex: textures.legR });
+      if (textures.torso) drawCalls.push({ ...spriteFromBones(j.hip,    j.shldr,  layer.widthTorso, p.torso), tex: textures.torso });
+      if (textures.armL)  drawCalls.push({ ...spriteFromBones(j.shldrL, j.wristL, layer.widthLimb,  p.armL),  tex: textures.armL });
+      if (textures.armR)  drawCalls.push({ ...spriteFromBones(j.shldrR, j.wristR, layer.widthLimb,  p.armR),  tex: textures.armR });
+      if (textures.head)  drawCalls.push({ ...spriteFromHead(j.head,    j.scale,  layer.widthHead,  p.head),  tex: textures.head });
 
       if (drawCalls.length) drawPart(drawCalls);
     },

@@ -10,7 +10,8 @@ import { attachSolid } from './layers/solid-layer.js';
 import { attachWebcam, emptyWebcamLayer } from './layers/webcam-layer.js';
 import { attachShader, emptyShaderLayer } from './layers/shader-layer.js';
 import { attachHydra, emptyHydraLayer } from './layers/hydra-layer.js';
-import { attachDancerImg, emptyDancerImgLayer, ingestPartImage, PART_KEYS, PART_LABELS } from './layers/dancer-img-layer.js?v=1';
+import { attachDancerImg, emptyDancerImgLayer, ingestPartImage, PART_KEYS, PART_LABELS } from './layers/dancer-img-layer.js?v=2';
+import { attachTitle, emptyTitleLayer } from './layers/title-layer.js?v=1';
 import { EFFECT_NAMES } from './layers/shader-effects.js?v=3';
 import { initAudio, tap as tapTempo, listAudioInputs, currentAudioDeviceId } from './audio/analyser.js';
 import { createAudioState } from './audio/uniforms.js';
@@ -131,6 +132,7 @@ async function attachLayerRuntime(layer) {
     case 'shader': return attachShader(regl, layer, audioState);
     case 'hydra':  return attachHydra(regl, layer);
     case 'dancer-img': return attachDancerImg(regl, layer, audioState);
+    case 'title': return attachTitle(regl, layer, audioState);
     default: throw new Error(`unknown layer type: ${layer.type}`);
   }
 }
@@ -173,7 +175,15 @@ function selectSurface(id) {
 }
 
 // ---- UI builders ----
+// Drag-aware sync guard. When a user is actively dragging a slider, calling
+// syncUI() rebuilds the sidebar DOM which destroys the slider element mid-drag
+// — every input event would otherwise tear down the very element receiving
+// the next event. While isDragging is true, syncUI() is skipped; pointerup
+// flips the flag and triggers a single catch-up sync.
+let isDragging = false;
+let syncPending = false;
 function syncUI() {
+  if (isDragging) { syncPending = true; return; }
   emptyHint.style.display = store.state.surfaces.length ? 'none' : 'block';
   buildSurfaceList();
   buildSnapshotGrid();
@@ -278,7 +288,82 @@ function buildLayerRow(surface, layer, indexInStack) {
   if (layer.type === 'dancer-img') {
     li.append(buildDancerImgControls(layer));
   }
+  if (layer.type === 'title') {
+    li.append(buildTitleControls(layer));
+  }
   return li;
+}
+
+function buildTitleControls(layer) {
+  const wrap = document.createElement('div');
+  wrap.className = 'lkey';
+
+  // text content (single-line input)
+  const textLbl = document.createElement('span');
+  textLbl.textContent = 'text';
+  textLbl.style.cssText = 'grid-column: 1 / -1; opacity:0.6;';
+  wrap.append(textLbl);
+
+  const textIn = document.createElement('input');
+  textIn.type = 'text';
+  textIn.value = layer.text;
+  textIn.style.cssText = 'grid-column: 1 / -1; min-width:0; background:#15151d; color:#ddd; border:1px solid #2a2a30; padding:3px 6px; font-family:monospace; font-size:11px;';
+  let textTimer = null;
+  textIn.oninput = () => {
+    if (textTimer) clearTimeout(textTimer);
+    textTimer = setTimeout(() => store.update('', () => { layer.text = textIn.value; }), 200);
+  };
+  wrap.append(textIn);
+
+  // font + reveal mode side by side
+  wrap.append(label('font'));
+  const fontSel = document.createElement('select');
+  for (const f of ['monospace', 'serif', 'sans-serif', 'Courier New', 'Georgia', 'Helvetica', 'Impact']) {
+    const opt = document.createElement('option');
+    opt.value = f; opt.textContent = f;
+    if (f === layer.font) opt.selected = true;
+    fontSel.appendChild(opt);
+  }
+  fontSel.onchange = () => store.update('', () => { layer.font = fontSel.value; });
+  wrap.append(fontSel);
+
+  wrap.append(label('reveal'));
+  const modeSel = document.createElement('select');
+  for (const [val, name] of [[0,'instant'],[1,'char-by-char'],[2,'word-by-word'],[3,'fade-in']]) {
+    const opt = document.createElement('option');
+    opt.value = val; opt.textContent = name;
+    if (val === layer.revealMode) opt.selected = true;
+    modeSel.appendChild(opt);
+  }
+  modeSel.onchange = () => store.update('', () => { layer.revealMode = +modeSel.value; });
+  wrap.append(modeSel);
+
+  wrap.append(label('font size'));
+  wrap.append(rangeInput(layer, 'fontSize', 24, 240, 2));
+  wrap.append(label('reveal speed'));
+  wrap.append(rangeInput(layer, 'revealSpeed', 0.5, 16, 0.5));
+
+  wrap.append(label('scale'));
+  wrap.append(rangeInput(layer, 'scale', 0.2, 3.0, 0.05));
+  wrap.append(label('rotation°'));
+  wrap.append(rangeInput(layer, 'rotation', -180, 180, 1));
+
+  wrap.append(label('x pos'));
+  wrap.append(rangeInput(layer, 'xPos', 0, 1, 0.005));
+  wrap.append(label('y pos'));
+  wrap.append(rangeInput(layer, 'yPos', 0, 1, 0.005));
+
+  wrap.append(label('glow'));
+  wrap.append(rangeInput(layer, 'glow', 0, 3, 0.05));
+  wrap.append(label('audio intensity'));
+  wrap.append(rangeInput(layer, 'audioIntensity', 0, 3, 0.05));
+
+  wrap.append(label('color'));
+  wrap.append(colorArrInput(layer, 'color'));
+  wrap.append(label('glow color'));
+  wrap.append(colorArrInput(layer, 'glowColor'));
+
+  return wrap;
 }
 
 function buildDancerImgControls(layer) {
@@ -286,24 +371,35 @@ function buildDancerImgControls(layer) {
   wrap.className = 'lkey';
   const filePartInput = $('file-dancer-part');
 
-  // Per-part upload buttons. Each row spans BOTH columns of the .lkey grid
-  // (`grid-template-columns: 175px 175px` — meant for label/control pairs;
-  // our part rows are self-contained so they need full width).
+  // Per-part collapsible blocks. Each <details> spans both columns of the
+  // .lkey grid. Summary row = label + upload button + filename + flip toggles.
+  // Expanded body = rotation / scale / width / offsetX/Y sliders.
   for (const key of PART_KEYS) {
-    const row = document.createElement('div');
-    row.className = 'row';
-    row.style.cssText = 'display:flex; align-items:center; gap:8px; margin:3px 0; grid-column: 1 / -1; min-width:0;';
+    if (layer.parts[key].rotation === undefined) layer.parts[key].rotation = 0;
+    if (layer.parts[key].scale === undefined) layer.parts[key].scale = 1.0;
+    if (layer.parts[key].widthScale === undefined) layer.parts[key].widthScale = 1.0;
+    if (layer.parts[key].offsetX === undefined) layer.parts[key].offsetX = 0;
+    if (layer.parts[key].offsetY === undefined) layer.parts[key].offsetY = 0;
+    if (layer.parts[key].flipX === undefined) layer.parts[key].flipX = false;
+    if (layer.parts[key].flipY === undefined) layer.parts[key].flipY = false;
+
+    const det = document.createElement('details');
+    det.style.cssText = 'grid-column: 1 / -1; min-width:0; margin:2px 0; border:1px solid #2a2a30; border-radius:3px; padding:2px 4px;';
+
+    const sum = document.createElement('summary');
+    sum.style.cssText = 'display:flex; align-items:center; gap:8px; cursor:pointer; list-style:none;';
 
     const lbl = document.createElement('span');
     lbl.textContent = PART_LABELS[key];
     lbl.style.cssText = 'min-width:60px; font-size:11px; opacity:0.7;';
-    row.append(lbl);
+    sum.append(lbl);
 
     const btn = document.createElement('button');
     btn.textContent = layer.parts[key]?.imageId ? 'replace' : 'upload';
-    btn.onclick = () => {
+    btn.onclick = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
       if (!filePartInput) return;
-      // route this click's file to the right part via a one-shot listener
       filePartInput.value = '';
       const onChange = async () => {
         filePartInput.removeEventListener('change', onChange);
@@ -311,16 +407,14 @@ function buildDancerImgControls(layer) {
         if (!file) return;
         try {
           await ingestPartImage(layer, key, file);
-          // reload the part's texture in the runtime without rebuilding the whole layer
           const rt = layerRuntimes.get(layer.id);
           if (rt?.reloadPart) {
             await rt.reloadPart(key);
           } else {
-            // Fallback: re-attach
             try { rt?.dispose?.(); } catch {}
             layerRuntimes.set(layer.id, await attachDancerImg(regl, layer, audioState));
           }
-          store.update('', () => {});  // trigger re-render of UI
+          store.update('', () => {});
         } catch (e) {
           console.error('[dancer-img] upload failed', key, e);
           alert('upload failed: ' + e.message);
@@ -329,14 +423,52 @@ function buildDancerImgControls(layer) {
       filePartInput.addEventListener('change', onChange);
       filePartInput.click();
     };
-    row.append(btn);
+    sum.append(btn);
 
     const name = document.createElement('span');
     name.textContent = layer.parts[key]?.name || '(empty)';
-    name.style.cssText = 'font-size:10px; opacity:0.5; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;';
-    row.append(name);
+    name.style.cssText = 'font-size:10px; opacity:0.5; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:1; min-width:0;';
+    sum.append(name);
 
-    wrap.append(row);
+    det.append(sum);
+
+    // Expanded body — per-part transform controls
+    const body = document.createElement('div');
+    body.style.cssText = 'display:grid; grid-template-columns: 1fr 1fr; gap:4px 6px; padding:6px 0 4px 4px; font-size:10px;';
+
+    function addRow(text, ctrl) {
+      const l = document.createElement('span');
+      l.textContent = text;
+      l.style.cssText = 'opacity:0.6; align-self:center;';
+      body.append(l, ctrl);
+    }
+
+    addRow('rotation°',  rangeInput(layer.parts[key], 'rotation',   -180, 180, 1));
+    addRow('length',     rangeInput(layer.parts[key], 'scale',      0.3,  2.5, 0.05));
+    addRow('width',      rangeInput(layer.parts[key], 'widthScale', 0.3,  2.5, 0.05));
+    addRow('offset x',   rangeInput(layer.parts[key], 'offsetX',    -0.3, 0.3, 0.005));
+    addRow('offset y',   rangeInput(layer.parts[key], 'offsetY',    -0.3, 0.3, 0.005));
+
+    // Flip checkboxes side-by-side
+    const flipRow = document.createElement('div');
+    flipRow.style.cssText = 'grid-column: 1 / -1; display:flex; gap:14px; padding:2px 0;';
+    for (const axis of ['flipX', 'flipY']) {
+      const lab = document.createElement('label');
+      lab.style.cssText = 'display:flex; align-items:center; gap:4px; cursor:pointer;';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = !!layer.parts[key][axis];
+      cb.onchange = () => store.update('', () => { layer.parts[key][axis] = cb.checked; });
+      lab.append(cb);
+      const span = document.createElement('span');
+      span.textContent = axis;
+      lab.append(span);
+      flipRow.append(lab);
+    }
+    body.append(flipRow);
+
+    det.append(body);
+    wrap.append(det);
   }
 
   wrap.append(label('audio intensity'));
@@ -480,8 +612,28 @@ function rangeInput(obj, prop, min, max, step) {
   const i = document.createElement('input');
   i.type = 'range'; i.min = min; i.max = max; i.step = step;
   i.value = obj[prop] ?? min;
+  attachDragGuard(i);
   i.oninput = () => store.update('', () => { obj[prop] = +i.value; });
   return i;
+}
+
+// Marks the slider as actively dragged so syncUI() can skip rebuilding the
+// sidebar mid-drag (which would tear the slider out of the DOM and kill the
+// drag). On pointerup, flips the flag back and runs a deferred sync if one
+// was suppressed during the drag.
+function attachDragGuard(input) {
+  const onDown = () => { isDragging = true; };
+  const onUp   = () => {
+    if (!isDragging) return;
+    isDragging = false;
+    if (syncPending) { syncPending = false; syncUI(); }
+  };
+  input.addEventListener('pointerdown', onDown);
+  // pointerup may fire outside the slider (drag-release-off-element), so
+  // listen on window for the release.
+  window.addEventListener('pointerup', onUp);
+  // keyboard arrows: change events fire on key release; no drag guard needed
+  // beyond the click already focusing the element. Arrow keys work natively.
 }
 function label(text) { const s = document.createElement('span'); s.textContent = text; return s; }
 function blendSelect(layer) {
@@ -498,6 +650,7 @@ function blendSelect(layer) {
 function opacityRange(layer) {
   const i = document.createElement('input');
   i.type = 'range'; i.min = 0; i.max = 1; i.step = 0.01; i.value = layer.opacity ?? 1;
+  attachDragGuard(i);
   i.oninput = () => {
     const layerIdx = store.state.layers.indexOf(layer);
     touchParam(`/layers/${layerIdx}/opacity`);
@@ -699,6 +852,16 @@ async function addDancerImgLayer() {
   addLayerToSelectedOrNewSurface(layer);
 }
 
+async function addTitleLayer() {
+  const layerId = 'layer_' + crypto.randomUUID().slice(0, 8);
+  const layer = emptyTitleLayer(layerId);
+  let rt;
+  try { rt = await attachTitle(regl, layer, audioState); }
+  catch (e) { console.error('[editor] title attach', e); alert('title attach failed: ' + e.message); return; }
+  layerRuntimes.set(layer.id, rt);
+  addLayerToSelectedOrNewSurface(layer);
+}
+
 function addLayerToSelectedOrNewSurface(layer) {
   store.update('', (st) => {
     st.layers.push(layer);
@@ -727,6 +890,8 @@ if (btnAddShader) btnAddShader.onclick = () => addShaderLayer(selShader?.value |
 if (btnAddHydra)  btnAddHydra.onclick  = () => addHydraLayer();
 const btnAddDancerImg = document.getElementById('btn-add-dancer-img');
 if (btnAddDancerImg) btnAddDancerImg.onclick = () => addDancerImgLayer();
+const btnAddTitle = document.getElementById('btn-add-title');
+if (btnAddTitle) btnAddTitle.onclick = () => addTitleLayer();
 
 // Output resolution dropdown — controls the canvas backing-buffer size on the
 // output tab (decouples it from window size, needed for projector / Chromecast
@@ -763,7 +928,9 @@ const audioDeviceSel = document.getElementById('audio-device');
 async function refreshAudioDevices() {
   if (!audioDeviceSel) return;
   const inputs = await listAudioInputs();
-  audioDeviceSel.hidden = inputs.length <= 1;
+  // Always show the picker once audio is engaged so the user can verify
+  // which device is captured (and pick a Stereo Mix / loopback if available).
+  audioDeviceSel.hidden = inputs.length === 0;
   audioDeviceSel.innerHTML = '';
   const cur = currentAudioDeviceId();
   // 'default' option lets the OS pick (matches getUserMedia({audio:true}) behavior)
@@ -808,12 +975,19 @@ if (audioDeviceSel) {
   };
 }
 
-// Tap tempo on spacebar; N/P to cue advance/prev
+// Tap tempo on spacebar; N/P to cue advance/prev; 1-9 to recall snapshot,
+// Shift+1-9 to save into that slot.
 window.addEventListener('keydown', (e) => {
   if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) return;
   if (e.code === 'Space') { e.preventDefault(); tapTempo(); }
   else if (e.key === 'n' || e.key === 'N') { e.preventDefault(); cueEngine.advance(); }
   else if (e.key === 'p' || e.key === 'P') { e.preventDefault(); cueEngine.previous(); }
+  else if (/^Digit[1-9]$/.test(e.code)) {
+    const slot = +e.code.slice(5) - 1;  // 0-8
+    e.preventDefault();
+    if (e.shiftKey) saveToSlot(slot);
+    else recallSlot(slot);
+  }
 });
 
 // ---- snapshots ----

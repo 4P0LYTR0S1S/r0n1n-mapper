@@ -8,9 +8,10 @@ import { attachSolid } from './layers/solid-layer.js';
 import { attachWebcam } from './layers/webcam-layer.js';
 import { attachShader } from './layers/shader-layer.js';
 import { attachHydra } from './layers/hydra-layer.js';
-import { attachDancerImg } from './layers/dancer-img-layer.js?v=1';
+import { attachDancerImg } from './layers/dancer-img-layer.js?v=2';
+import { attachTitle } from './layers/title-layer.js?v=1';
 import { createAudioState } from './audio/uniforms.js';
-import { initAudio } from './audio/analyser.js';
+import { initAudio, getAudioStream } from './audio/analyser.js';
 import { createPipeline } from './render/pipeline.js';
 import { parseCube, uploadLutTexture } from './grade/lut.js';
 import { getLut as idbGetLut, listLuts } from './storage/idb.js';
@@ -51,6 +52,7 @@ async function attachLayerRuntime(layer) {
     case 'shader': return attachShader(regl, layer, audioState);
     case 'hydra':  return attachHydra(regl, layer);
     case 'dancer-img': return attachDancerImg(regl, layer, audioState);
+    case 'title': return attachTitle(regl, layer, audioState);
     default: throw new Error(`unknown layer type: ${layer.type}`);
   }
 }
@@ -99,21 +101,75 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'a' || e.key === 'A') {
     initAudio(null).then(() => {
       console.log('[output] audio enabled on output tab');
-      const banner = document.getElementById('idle');
-      if (banner) banner.textContent = '🎤 audio live · F = fullscreen';
+      document.getElementById('idle')?.remove();
     }).catch(e => console.error('[output] audio enable failed', e));
   }
+  // 'h' — toggle the HUD overlay (fps / sync / rec) so the projection is clean
+  if (e.key === 'h' || e.key === 'H') {
+    document.body.classList.toggle('hide-hud');
+  }
+  // 'r' — start/stop MediaRecorder on the output canvas (with mic audio if engaged)
+  if (e.key === 'r' || e.key === 'R') toggleRecording();
 });
+
+// ---- canvas → WebM recorder (with optional mic audio) ----
+let recorder = null;
+let recordChunks = [];
+function toggleRecording() {
+  if (recorder?.state === 'recording') {
+    recorder.stop();
+    return;
+  }
+  try {
+    const stream = canvas.captureStream(60);
+    const micStream = getAudioStream();
+    if (micStream) {
+      for (const track of micStream.getAudioTracks()) stream.addTrack(track);
+    }
+    const opts = [
+      { mimeType: 'video/webm;codecs=vp9,opus' },
+      { mimeType: 'video/webm;codecs=vp8,opus' },
+      { mimeType: 'video/webm' },
+    ];
+    recorder = null;
+    for (const o of opts) {
+      try { recorder = new MediaRecorder(stream, o); break; } catch {}
+    }
+    if (!recorder) { console.error('[output] no supported MediaRecorder mime'); return; }
+    recordChunks = [];
+    recorder.ondataavailable = (e) => { if (e.data.size) recordChunks.push(e.data); };
+    recorder.onstop = () => {
+      const blob = new Blob(recordChunks, { type: 'video/webm' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `r0n1n-output-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.webm`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      document.body.classList.remove('recording');
+      const dot = document.getElementById('rec-dot');
+      if (dot) dot.hidden = true;
+    };
+    recorder.start(1000);  // 1s chunks → can stop cleanly even mid-stream
+    document.body.classList.add('recording');
+    const dot = document.getElementById('rec-dot');
+    if (dot) dot.hidden = false;
+    console.log('[output] recording started');
+  } catch (e) {
+    console.error('[output] record failed', e);
+  }
+}
 
 // Auto-prompt for mic on first user interaction with the output canvas.
 // Falls back gracefully if denied — output still mirrors editor state, just
-// without audio reactivity from this tab's perspective.
+// without audio reactivity from this tab's perspective. The idle banner is
+// removed from the DOM entirely once audio is engaged so it can't reappear
+// when sync goes briefly stale (>1.5s without an editor broadcast).
 canvas.addEventListener('click', () => {
   if (audioState.ready) return;
   initAudio(null).then(() => {
     console.log('[output] audio enabled via canvas click');
-    const banner = document.getElementById('idle');
-    if (banner) banner.textContent = '🎤 audio live · F = fullscreen';
+    document.getElementById('idle')?.remove();
   }).catch(e => console.warn('[output] audio click-grant failed', e));
 }, { once: true });
 

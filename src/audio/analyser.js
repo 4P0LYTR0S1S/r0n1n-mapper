@@ -79,6 +79,9 @@ export async function listAudioInputs() {
 }
 
 export function currentAudioDeviceId() { return currentDeviceId; }
+// Exposes the live mic MediaStream so MediaRecorder can mux audio into a
+// canvas-captured video. Returns null until initAudio() has succeeded.
+export function getAudioStream() { return stream; }
 
 export function audioReady() {
   return !!ctx && !!analyser;
