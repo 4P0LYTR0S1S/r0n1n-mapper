@@ -10,7 +10,7 @@ import { attachSolid } from './layers/solid-layer.js';
 import { attachWebcam, emptyWebcamLayer } from './layers/webcam-layer.js';
 import { attachShader, emptyShaderLayer } from './layers/shader-layer.js';
 import { attachHydra, emptyHydraLayer } from './layers/hydra-layer.js';
-import { attachDancerImg, emptyDancerImgLayer, ingestPartImage, PART_KEYS, PART_LABELS } from './layers/dancer-img-layer.js?v=2';
+import { attachDancerImg, emptyDancerImgLayer, ingestPartImage, PART_KEYS, PART_LABELS } from './layers/dancer-img-layer.js?v=3';
 import { attachTitle, emptyTitleLayer } from './layers/title-layer.js?v=1';
 import { EFFECT_NAMES } from './layers/shader-effects.js?v=3';
 import { initAudio, tap as tapTempo, listAudioInputs, currentAudioDeviceId } from './audio/analyser.js';
@@ -448,6 +448,12 @@ function buildDancerImgControls(layer) {
     addRow('width',      rangeInput(layer.parts[key], 'widthScale', 0.3,  2.5, 0.05));
     addRow('offset x',   rangeInput(layer.parts[key], 'offsetX',    -0.3, 0.3, 0.005));
     addRow('offset y',   rangeInput(layer.parts[key], 'offsetY',    -0.3, 0.3, 0.005));
+    // splitV only meaningful for arms/legs in v2 bend mode — where the
+    // elbow/knee is in the source image. Hidden for head + torso (no bend).
+    if (key === 'armL' || key === 'armR' || key === 'legL' || key === 'legR') {
+      if (layer.parts[key].splitV === undefined) layer.parts[key].splitV = 0.5;
+      addRow('split v',  rangeInput(layer.parts[key], 'splitV', 0.2, 0.8, 0.01));
+    }
 
     // Flip checkboxes side-by-side
     const flipRow = document.createElement('div');
@@ -481,6 +487,23 @@ function buildDancerImgControls(layer) {
   wrap.append(rangeInput(layer, 'widthLimb', 0.02, 0.20, 0.005));
   wrap.append(label('width torso'));
   wrap.append(rangeInput(layer, 'widthTorso', 0.04, 0.30, 0.005));
+
+  // v2 bend mode toggle — arms split shoulder→elbow→wrist, legs hip→knee→ankle
+  if (layer.bendLimbs === undefined) layer.bendLimbs = true;
+  const bendRow = document.createElement('div');
+  bendRow.style.cssText = 'grid-column: 1 / -1; display:flex; align-items:center; gap:6px; padding:4px 0; font-size:11px;';
+  const bendLab = document.createElement('label');
+  bendLab.style.cssText = 'display:flex; align-items:center; gap:4px; cursor:pointer; opacity:0.85;';
+  const bendCB = document.createElement('input');
+  bendCB.type = 'checkbox';
+  bendCB.checked = !!layer.bendLimbs;
+  bendCB.onchange = () => store.update('', () => { layer.bendLimbs = bendCB.checked; });
+  bendLab.append(bendCB);
+  const bendSpan = document.createElement('span');
+  bendSpan.textContent = 'bend limbs (split at elbow/knee)';
+  bendLab.append(bendSpan);
+  bendRow.append(bendLab);
+  wrap.append(bendRow);
 
   wrap.append(label('bg'));
   wrap.append(colorArrInput(layer, 'bg'));

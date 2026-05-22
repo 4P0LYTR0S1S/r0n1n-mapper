@@ -57,11 +57,35 @@ Each part has a collapsible panel in the layer (click the triangle next to the p
 5. **Save as a snapshot** (the snapshot bar at the bottom of the editor) once it looks right — gives you a one-click recall during live performance.
 6. **Audio intensity matters.** A high `audio intensity` makes the dancer move violently; if parts fly off-frame, dial it down.
 
+## v2 bend mode — limbs that bend at the elbow / knee
+
+Each new `dancer-img` layer ships with `bend limbs (split at elbow/knee)` **on** by default (toggle at the bottom of the layer panel).
+
+When bend mode is on:
+- **Arms** render as TWO rigid sprites: upper (shoulder → elbow) + lower (elbow → wrist).
+- **Legs** render as TWO rigid sprites: upper (hip → knee) + lower (knee → ankle).
+- Each segment samples HALF of the image, split at the per-part `split v` slider (default 0.5 = image middle).
+
+The two segments meet at the image's split row so the joint appears visually continuous.
+
+### Preparing images for bend mode
+
+The bend-friendly image is a full limb (shoulder → wrist) drawn in roughly straight pose. Then:
+
+1. Find where the joint is in YOUR image (elbow for arms, knee for legs).
+2. If the joint is at exactly the vertical middle of the image, leave `split v = 0.5`.
+3. If your image has a longer upper arm (joint sits lower in the image), set `split v` higher (e.g., 0.6).
+4. If your image has a longer forearm (joint sits higher), set `split v` lower (e.g., 0.4).
+
+The slider's range is 0.2..0.8 — anything outside that and you'd be better off with separate upper/lower images uploaded individually.
+
+Turn bend mode OFF if you want the puppet aesthetic of v1 (single rigid sprite per limb).
+
 ## Notes on rigging quality
 
-This is **v1 rigid sprites** — each limb is a single rectangle stretched between two joints. The arm and leg sprites won't bend at the elbow/knee. The figure will read as "puppet" not "human" — that's the intended aesthetic for the VJ / cyberpunk use case.
+The v1 rigid puppet aesthetic is preserved as the opt-out (`bend limbs` toggle off). Bend mode is the more anatomical look. Neither is "correct" — pick per project / aesthetic.
 
-A future release will add mesh-deformed limbs (2-segment strips that bend at intermediate joints). Until then, the rigid-sprite look has a specific charm — embrace it.
+Future releases may add true mesh deformation (smooth curves through joints instead of two rigid segments meeting at a hinge). For now the two-segment approach gives 90% of the human-looking motion at 10% of the math complexity.
 
 ## Sample asset pack
 

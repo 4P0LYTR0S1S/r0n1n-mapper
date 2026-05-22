@@ -8,7 +8,7 @@ import { attachSolid } from './layers/solid-layer.js';
 import { attachWebcam } from './layers/webcam-layer.js';
 import { attachShader } from './layers/shader-layer.js';
 import { attachHydra } from './layers/hydra-layer.js';
-import { attachDancerImg } from './layers/dancer-img-layer.js?v=2';
+import { attachDancerImg } from './layers/dancer-img-layer.js?v=3';
 import { attachTitle } from './layers/title-layer.js?v=1';
 import { createAudioState } from './audio/uniforms.js';
 import { initAudio, getAudioStream } from './audio/analyser.js';

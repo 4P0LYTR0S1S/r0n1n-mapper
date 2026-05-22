@@ -27,6 +27,10 @@ function defaultPart() {
     offsetY: 0,
     flipX: false,     // mirror image horizontally
     flipY: false,     // mirror image vertically (use if uploaded upside down)
+    splitV: 0.5,      // v2 bend mode: where the elbow/knee is in the image (0..1).
+                      // Only used for arms/legs when layer.bendLimbs is on.
+                      // 0.5 = image middle (default); tune up/down to match the
+                      // anatomy of your specific upload.
   };
 }
 
@@ -46,6 +50,10 @@ export function emptyDancerImgLayer(id) {
     widthHead: 0.10,    // base sprite width relative to canvas
     widthLimb: 0.06,    // arm/leg sprite width
     widthTorso: 0.14,
+    // v2 — when true, arms render as 2 rigid segments (shoulder→elbow + elbow→wrist)
+    // and legs render as (hip→knee + knee→ankle). Each segment samples half of the
+    // limb's image, split at per-part splitV. False = v1 single-segment rigid sprites.
+    bendLimbs: true,
   };
 }
 
@@ -128,19 +136,19 @@ function computeJoints(t, audio, intensity) {
            hipL, hipR, kneeL, kneeR, ankleL, ankleR, scale };
 }
 
-// Compute transform for a part rendered between two joints (start = top of
-// image, end = bottom). Applies the per-part overrides on top of the
-// auto-computed transform.
+// Compute transform for a segment of an image between two joints. The quad's
+// local +Y points from end → start (image top = start). The uvMin/uvMax args
+// let v2 bend-mode render only the top half or bottom half of the texture.
 //
-//   start/end — joint positions in canvas UV
-//   baseWidth — the layer's base width for this part class (head/limb/torso)
-//   ov        — per-part override block (rotation/scale/widthScale/offsetX/Y/flipX/Y)
+//   start/end   — joint positions in canvas UV
+//   baseWidth   — layer base width for this part class (head/limb/torso)
+//   ov          — per-part override block
+//   uvMin/uvMax — texture v range to sample (default 0..1 = full image)
 //
-// Returns { anchor, rotation, size, flipX, flipY }.
-function spriteFromBones(start, end, baseWidth, ov) {
+// Returns { anchor, rotation, size, flipX, flipY, uvMin, uvMax }.
+function spriteFromBones(start, end, baseWidth, ov, uvMin = 0, uvMax = 1) {
   const baseLength = Math.hypot(end[0] - start[0], end[1] - start[1]);
   const length = baseLength * (ov?.scale ?? 1);
-  // Quad's local +Y should point from end→start (image top = start).
   const angle = Math.atan2(start[1] - end[1], start[0] - end[0]);
   const rotation = angle - Math.PI / 2 + (ov?.rotation ?? 0) * Math.PI / 180;
   const anchor = [
@@ -153,6 +161,8 @@ function spriteFromBones(start, end, baseWidth, ov) {
     size: [baseWidth * (ov?.widthScale ?? 1), length],
     flipX: ov?.flipX ? 1 : 0,
     flipY: ov?.flipY ? 1 : 0,
+    uvMin,
+    uvMax,
   };
 }
 
@@ -167,6 +177,8 @@ function spriteFromHead(headPos, _figureScale, baseWidth, ov) {
     size: [w, h],
     flipX: ov?.flipX ? 1 : 0,
     flipY: ov?.flipY ? 1 : 0,
+    uvMin: 0,
+    uvMax: 1,
   };
 }
 
@@ -217,12 +229,21 @@ export async function attachDancerImg(regl, layer, audioState) {
       uniform vec2 u_size;
       uniform float u_flipX;
       uniform float u_flipY;
+      uniform float u_uvMin;
+      uniform float u_uvMax;
       varying vec2 v_uv;
       void main() {
         // a_pos in [-0.5, +0.5] for both axes
-        vec2 uv = a_pos + 0.5;
+        // Map quad-local Y to texture V band [u_uvMin .. u_uvMax]:
+        //   quad bottom (a_pos.y=-0.5) → uv.y = u_uvMin
+        //   quad top    (a_pos.y=+0.5) → uv.y = u_uvMax
+        // For v2 bend mode: upper segment samples uv.y in [splitV..1.0],
+        // lower segment samples uv.y in [0..splitV]. Single-segment v1/head/torso
+        // pass uvMin=0, uvMax=1 (full image).
+        float vRange = u_uvMax - u_uvMin;
+        vec2 uv = vec2(a_pos.x + 0.5, (a_pos.y + 0.5) * vRange + u_uvMin);
         if (u_flipX > 0.5) uv.x = 1.0 - uv.x;
-        if (u_flipY > 0.5) uv.y = 1.0 - uv.y;
+        if (u_flipY > 0.5) uv.y = (u_uvMax + u_uvMin) - uv.y;  // mirror within band
         v_uv = uv;
         vec2 scaled = a_pos * u_size;
         float c = cos(u_rotation), s = sin(u_rotation);
@@ -256,6 +277,8 @@ export async function attachDancerImg(regl, layer, audioState) {
       u_tex:      regl.prop('tex'),
       u_flipX:    regl.prop('flipX'),
       u_flipY:    regl.prop('flipY'),
+      u_uvMin:    regl.prop('uvMin'),
+      u_uvMax:    regl.prop('uvMax'),
     },
     count: 6,
     depth: { enable: false },
@@ -287,15 +310,34 @@ export async function attachDancerImg(regl, layer, audioState) {
       // Clear FBO to bg via regl clear
       regl.clear({ color: [...(layer.bg ?? [0,0,0]), 1.0], depth: 1, framebuffer: fbo });
 
-      // Draw parts back-to-front: legs → torso → arms → head
+      // Draw parts back-to-front: legs → torso → arms → head.
+      // v2 bend mode (layer.bendLimbs): each limb splits into two rigid
+      // segments meeting at the elbow/knee. Each segment samples half of the
+      // limb's texture (split at part.splitV). Texture bands meet at the
+      // image's splitV row so the joint appears continuous.
       const drawCalls = [];
       const p = layer.parts;
-      if (textures.legL)  drawCalls.push({ ...spriteFromBones(j.hipL,   j.ankleL, layer.widthLimb,  p.legL),  tex: textures.legL });
-      if (textures.legR)  drawCalls.push({ ...spriteFromBones(j.hipR,   j.ankleR, layer.widthLimb,  p.legR),  tex: textures.legR });
-      if (textures.torso) drawCalls.push({ ...spriteFromBones(j.hip,    j.shldr,  layer.widthTorso, p.torso), tex: textures.torso });
-      if (textures.armL)  drawCalls.push({ ...spriteFromBones(j.shldrL, j.wristL, layer.widthLimb,  p.armL),  tex: textures.armL });
-      if (textures.armR)  drawCalls.push({ ...spriteFromBones(j.shldrR, j.wristR, layer.widthLimb,  p.armR),  tex: textures.armR });
-      if (textures.head)  drawCalls.push({ ...spriteFromHead(j.head,    j.scale,  layer.widthHead,  p.head),  tex: textures.head });
+      const bend = layer.bendLimbs !== false;  // default on
+
+      function pushLimb(tex, start, mid, end, baseWidth, ov) {
+        if (!tex) return;
+        if (bend) {
+          const splitV = ov?.splitV ?? 0.5;
+          // upper segment: top of image (splitV..1.0) → start → mid
+          drawCalls.push({ ...spriteFromBones(start, mid, baseWidth, ov, splitV, 1.0), tex });
+          // lower segment: bottom of image (0..splitV) → mid → end
+          drawCalls.push({ ...spriteFromBones(mid,   end, baseWidth, ov, 0.0, splitV), tex });
+        } else {
+          drawCalls.push({ ...spriteFromBones(start, end, baseWidth, ov, 0, 1), tex });
+        }
+      }
+
+      pushLimb(textures.legL, j.hipL,   j.kneeL,  j.ankleL, layer.widthLimb,  p.legL);
+      pushLimb(textures.legR, j.hipR,   j.kneeR,  j.ankleR, layer.widthLimb,  p.legR);
+      if (textures.torso) drawCalls.push({ ...spriteFromBones(j.hip, j.shldr, layer.widthTorso, p.torso, 0, 1), tex: textures.torso });
+      pushLimb(textures.armL, j.shldrL, j.elbowL, j.wristL, layer.widthLimb,  p.armL);
+      pushLimb(textures.armR, j.shldrR, j.elbowR, j.wristR, layer.widthLimb,  p.armR);
+      if (textures.head)  drawCalls.push({ ...spriteFromHead(j.head, j.scale, layer.widthHead, p.head), tex: textures.head });
 
       if (drawCalls.length) drawPart(drawCalls);
     },

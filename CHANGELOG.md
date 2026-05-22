@@ -2,6 +2,26 @@
 
 All notable changes to r0n1n-mapper. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning is [SemVer](https://semver.org/) with calver-style date stamps for pre-1.0 milestones.
 
+## [0.4.1] — 2026-05-23
+
+Dancer-img bent limbs. Each arm now renders as two rigid sprite segments (shoulder→elbow + elbow→wrist) instead of a single rigid stick from shoulder to wrist; legs likewise (hip→knee→ankle). Reads as "puppet with joints" instead of "puppet with bones." The upper segment samples the top half of the limb's source image; the lower segment samples the bottom half; both segments meet at the image's split row so the joint appears visually continuous. Default ON for new dancer-img layers; per-layer toggle preserves the v1 single-segment puppet aesthetic for users who prefer it.
+
+### Added
+
+- **`layer.bendLimbs`** (boolean, default `true`) on the dancer-img layer. Toggle in the layer panel: "bend limbs (split at elbow/knee)".
+- **`part.splitV`** (0.2..0.8, default `0.5`) per-part slider for arms + legs only. Tunes where the elbow/knee is in your source image's vertical axis (raise if your image has a longer upper arm, lower for a longer forearm).
+- **`u_uvMin` / `u_uvMax` uniforms** in the dancer-img vertex shader. Quad-local Y now maps to texture V across an arbitrary band `[uvMin..uvMax]` instead of always sampling the full `[0..1]` image. Single-segment layers (head + torso + v1 limbs) pass `[0, 1]` and behave identically to v0.4.0.
+- **`flipY` band-aware mirroring** in the vertex shader — flipping within a partial UV band now mirrors only within that band, so per-segment flip on bent limbs works correctly.
+- **`docs/DANCER_BODY_PARTS.md`** v2 section documenting bend mode, splitV tuning, and recommended image conventions for the two-segment layout.
+
+### Changed
+
+- Existing dancer-img layers loaded from earlier sessions auto-pick up bend mode (`fillPartDefaults` backfills `bendLimbs = true` on attach). If you preferred the v1 puppet look, toggle off in the layer panel.
+
+### Performance
+
+- Two draw calls per limb in bend mode (vs one in v1). Practical cost on 1080p: negligible — already running at 60fps with the full dancer + presets stack.
+
 ## [0.4.0] — 2026-05-22
 
 **Self-Demoing + Dancer Builder.** The tool now records its own demos and the

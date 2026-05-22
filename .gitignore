@@ -22,3 +22,8 @@ npm-debug.log*
 
 # osc-bridge npm output
 osc-bridge/node_modules/
+
+# Claude Code session exports — operator may /export into the project dir;
+# these contain raw conversation content and must never land in the public repo
+*-this-session-*.txt
+20[0-9][0-9]-*-*-*-*-*-*.txt
