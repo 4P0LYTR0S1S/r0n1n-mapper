@@ -10,7 +10,7 @@ import { attachSolid } from './layers/solid-layer.js';
 import { attachWebcam, emptyWebcamLayer } from './layers/webcam-layer.js';
 import { attachShader, emptyShaderLayer } from './layers/shader-layer.js';
 import { attachHydra, emptyHydraLayer } from './layers/hydra-layer.js';
-import { attachDancerImg, emptyDancerImgLayer, ingestPartImage, PART_KEYS, PART_LABELS } from './layers/dancer-img-layer.js?v=4';
+import { attachDancerImg, emptyDancerImgLayer, ingestPartImage, generateSampleBody, PART_KEYS, PART_LABELS, PART_KEYS_SIMPLE, PART_KEYS_COMPLEX } from './layers/dancer-img-layer.js?v=5';
 import { attachTitle, emptyTitleLayer } from './layers/title-layer.js?v=1';
 import { EFFECT_NAMES } from './layers/shader-effects.js?v=4';
 import { initAudio, tap as tapTempo, listAudioInputs, currentAudioDeviceId } from './audio/analyser.js';
@@ -371,10 +371,56 @@ function buildDancerImgControls(layer) {
   wrap.className = 'lkey';
   const filePartInput = $('file-dancer-part');
 
+  // ── Complex-body toggle + sample-body action (always at top) ──
+  if (layer.complexBody === undefined) layer.complexBody = false;
+  const modeRow = document.createElement('div');
+  modeRow.style.cssText = 'grid-column: 1 / -1; display:flex; align-items:center; gap:10px; padding:4px 0; font-size:11px;';
+  const modeLab = document.createElement('label');
+  modeLab.style.cssText = 'display:flex; align-items:center; gap:4px; cursor:pointer;';
+  const modeCB = document.createElement('input');
+  modeCB.type = 'checkbox';
+  modeCB.checked = !!layer.complexBody;
+  modeCB.onchange = async () => {
+    store.update('', () => { layer.complexBody = modeCB.checked; });
+  };
+  modeLab.append(modeCB);
+  const modeTxt = document.createElement('span');
+  modeTxt.textContent = 'complex body (14 parts)';
+  modeLab.append(modeTxt);
+  modeRow.append(modeLab);
+
+  const sampleBtn = document.createElement('button');
+  sampleBtn.textContent = '✦ generate sample';
+  sampleBtn.title = 'fill empty parts with a procedural neon body so you can see the rig move without uploading';
+  sampleBtn.style.cssText = 'font-size:10px;';
+  sampleBtn.onclick = async (e) => {
+    e.preventDefault();
+    sampleBtn.disabled = true;
+    sampleBtn.textContent = '✦ generating…';
+    try {
+      await generateSampleBody(layer, layer.complexBody ? 'complex' : 'simple');
+      const rt = layerRuntimes.get(layer.id);
+      try { rt?.dispose?.(); } catch {}
+      layerRuntimes.set(layer.id, await attachDancerImg(regl, layer, audioState));
+      store.update('', () => {});
+    } catch (err) {
+      console.error('[dancer-img] sample gen failed', err);
+      alert('sample generation failed: ' + err.message);
+    } finally {
+      sampleBtn.disabled = false;
+      sampleBtn.textContent = '✦ generate sample';
+    }
+  };
+  modeRow.append(sampleBtn);
+  wrap.append(modeRow);
+
+  // Pick which parts to show based on mode
+  const partKeysToShow = layer.complexBody ? PART_KEYS_COMPLEX : PART_KEYS_SIMPLE;
+
   // Per-part collapsible blocks. Each <details> spans both columns of the
   // .lkey grid. Summary row = label + upload button + filename + flip toggles.
   // Expanded body = rotation / scale / width / offsetX/Y sliders.
-  for (const key of PART_KEYS) {
+  for (const key of partKeysToShow) {
     if (layer.parts[key].rotation === undefined) layer.parts[key].rotation = 0;
     if (layer.parts[key].scale === undefined) layer.parts[key].scale = 1.0;
     if (layer.parts[key].widthScale === undefined) layer.parts[key].widthScale = 1.0;
@@ -487,23 +533,35 @@ function buildDancerImgControls(layer) {
   wrap.append(rangeInput(layer, 'widthLimb', 0.02, 0.20, 0.005));
   wrap.append(label('width torso'));
   wrap.append(rangeInput(layer, 'widthTorso', 0.04, 0.30, 0.005));
+  // Complex-mode-only width sliders for the static-anchor parts (hand/foot)
+  if (layer.complexBody) {
+    if (layer.widthHand === undefined) layer.widthHand = 0.045;
+    if (layer.widthFoot === undefined) layer.widthFoot = 0.05;
+    wrap.append(label('width hand'));
+    wrap.append(rangeInput(layer, 'widthHand', 0.015, 0.15, 0.005));
+    wrap.append(label('width foot'));
+    wrap.append(rangeInput(layer, 'widthFoot', 0.015, 0.15, 0.005));
+  }
 
-  // v2 bend mode toggle — arms split shoulder→elbow→wrist, legs hip→knee→ankle
-  if (layer.bendLimbs === undefined) layer.bendLimbs = true;
-  const bendRow = document.createElement('div');
-  bendRow.style.cssText = 'grid-column: 1 / -1; display:flex; align-items:center; gap:6px; padding:4px 0; font-size:11px;';
-  const bendLab = document.createElement('label');
-  bendLab.style.cssText = 'display:flex; align-items:center; gap:4px; cursor:pointer; opacity:0.85;';
-  const bendCB = document.createElement('input');
-  bendCB.type = 'checkbox';
-  bendCB.checked = !!layer.bendLimbs;
-  bendCB.onchange = () => store.update('', () => { layer.bendLimbs = bendCB.checked; });
-  bendLab.append(bendCB);
-  const bendSpan = document.createElement('span');
-  bendSpan.textContent = 'bend limbs (split at elbow/knee)';
-  bendLab.append(bendSpan);
-  bendRow.append(bendLab);
-  wrap.append(bendRow);
+  // Bend-limbs toggle only meaningful in SIMPLE mode (in complex mode each
+  // segment is its own image, no bend math needed). Hidden in complex mode.
+  if (!layer.complexBody) {
+    if (layer.bendLimbs === undefined) layer.bendLimbs = true;
+    const bendRow = document.createElement('div');
+    bendRow.style.cssText = 'grid-column: 1 / -1; display:flex; align-items:center; gap:6px; padding:4px 0; font-size:11px;';
+    const bendLab = document.createElement('label');
+    bendLab.style.cssText = 'display:flex; align-items:center; gap:4px; cursor:pointer; opacity:0.85;';
+    const bendCB = document.createElement('input');
+    bendCB.type = 'checkbox';
+    bendCB.checked = !!layer.bendLimbs;
+    bendCB.onchange = () => store.update('', () => { layer.bendLimbs = bendCB.checked; });
+    bendLab.append(bendCB);
+    const bendSpan = document.createElement('span');
+    bendSpan.textContent = 'bend limbs (split at elbow/knee)';
+    bendLab.append(bendSpan);
+    bendRow.append(bendLab);
+    wrap.append(bendRow);
+  }
 
   wrap.append(label('bg'));
   wrap.append(colorArrInput(layer, 'bg'));

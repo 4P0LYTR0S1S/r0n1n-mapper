@@ -8,11 +8,30 @@
 
 import { putImage, getImage } from '../storage/idb.js';
 
-export const PART_KEYS = ['head', 'torso', 'armL', 'armR', 'legL', 'legR'];
+// Simple mode = the original 6-part rig. Complex mode = 14-part rig where
+// each limb is split into anatomical segments + a hand/foot anchor sprite.
+// PART_KEYS_ALL is the union used for storage; the renderer iterates the
+// mode-specific subset.
+export const PART_KEYS_SIMPLE = ['head', 'torso', 'armL', 'armR', 'legL', 'legR'];
+export const PART_KEYS_COMPLEX = [
+  'head', 'torso',
+  'upperArmL', 'forearmL', 'handL',
+  'upperArmR', 'forearmR', 'handR',
+  'thighL', 'shinL', 'footL',
+  'thighR', 'shinR', 'footR',
+];
+export const PART_KEYS_ALL = [...new Set([...PART_KEYS_SIMPLE, ...PART_KEYS_COMPLEX])];
+// Back-compat: old callers reference PART_KEYS — point it at the simple set.
+export const PART_KEYS = PART_KEYS_SIMPLE;
+
 export const PART_LABELS = {
   head: 'HEAD', torso: 'TORSO',
   armL: 'ARM L', armR: 'ARM R',
   legL: 'LEG L', legR: 'LEG R',
+  upperArmL: 'UPPER ARM L', forearmL: 'FOREARM L', handL: 'HAND L',
+  upperArmR: 'UPPER ARM R', forearmR: 'FOREARM R', handR: 'HAND R',
+  thighL: 'THIGH L', shinL: 'SHIN L', footL: 'FOOT L',
+  thighR: 'THIGH R', shinR: 'SHIN R', footR: 'FOOT R',
 };
 
 function defaultPart() {
@@ -36,7 +55,7 @@ function defaultPart() {
 
 export function emptyDancerImgLayer(id) {
   const parts = {};
-  for (const k of PART_KEYS) parts[k] = defaultPart();
+  for (const k of PART_KEYS_ALL) parts[k] = defaultPart();
   return {
     id,
     type: 'dancer-img',
@@ -47,20 +66,22 @@ export function emptyDancerImgLayer(id) {
     parts,
     bg: [0.0, 0.0, 0.0],
     audioIntensity: 1.5,
-    widthHead: 0.10,    // base sprite width relative to canvas
-    widthLimb: 0.06,    // arm/leg sprite width
+    widthHead: 0.10,     // base sprite width relative to canvas
+    widthLimb: 0.06,     // arm/leg sprite width (simple-mode whole-limb, complex-mode segment)
     widthTorso: 0.14,
-    // v2 — when true, arms render as 2 rigid segments (shoulder→elbow + elbow→wrist)
-    // and legs render as (hip→knee + knee→ankle). Each segment samples half of the
-    // limb's image, split at per-part splitV. False = v1 single-segment rigid sprites.
+    widthHand: 0.045,    // complex mode only — hand sprite anchored at wrist
+    widthFoot: 0.05,     // complex mode only — foot sprite anchored at ankle
+    // Simple mode (default): 6 parts, optionally with v2 bendLimbs (2 segments per limb sharing one image).
+    // Complex mode: 14 parts, each anatomical segment uploaded separately. bendLimbs is a no-op here.
+    complexBody: false,
     bendLimbs: true,
   };
 }
 
-// Defensive default-fill so old projects (without per-part overrides) still
-// render. Mutates the layer in place; called on attach.
+// Defensive default-fill so old projects (without per-part overrides or
+// without the new complex-mode parts) still render. Mutates layer in place.
 export function fillPartDefaults(layer) {
-  for (const k of PART_KEYS) {
+  for (const k of PART_KEYS_ALL) {
     if (!layer.parts[k]) layer.parts[k] = defaultPart();
     else {
       const d = defaultPart();
@@ -69,6 +90,9 @@ export function fillPartDefaults(layer) {
       }
     }
   }
+  if (layer.widthHand === undefined) layer.widthHand = 0.045;
+  if (layer.widthFoot === undefined) layer.widthFoot = 0.05;
+  if (layer.complexBody === undefined) layer.complexBody = false;
 }
 
 async function sha256Hex(buffer) {
@@ -80,8 +104,135 @@ export async function ingestPartImage(layer, partKey, file) {
   const buffer = await file.arrayBuffer();
   const hash = await sha256Hex(buffer);
   await putImage(hash, file, file.name);
-  layer.parts[partKey] = { imageId: hash, name: file.name };
+  // Preserve existing per-part overrides (rotation, scale, flipX/Y, etc.) —
+  // we're only swapping the imageId + name, not nuking the whole part.
+  const existing = layer.parts[partKey] ?? defaultPart();
+  layer.parts[partKey] = { ...defaultPart(), ...existing, imageId: hash, name: file.name };
   return hash;
+}
+
+// Procedural sample body — Canvas2D draws stylized neon-outlined cyberpunk
+// body parts and saves them as PNG blobs in IDB. Called when the user
+// toggles complexBody on and opts to fill missing parts with the sample
+// rig. Each part is sized appropriately for its anchor (vertical limbs,
+// square-ish hands/feet, oval head, tapered torso).
+//
+// Style: cyan outline, magenta-to-cyan gradient fill, subtle inner highlight.
+// On-brand for r0n1n's cyberpunk aesthetic; NOT a stick figure.
+function drawPart(name, canvas, ctx) {
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+  // shared gradient — cyan top → magenta bottom
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0,    'rgba(80,  240, 230, 0.92)');
+  grad.addColorStop(0.5,  'rgba(180, 90,  220, 0.92)');
+  grad.addColorStop(1,    'rgba(255, 40,  140, 0.92)');
+  ctx.fillStyle = grad;
+  ctx.strokeStyle = 'rgba(0, 255, 220, 1.0)';
+  ctx.lineWidth = Math.max(3, W * 0.025);
+  ctx.lineJoin = 'round';
+
+  function capsule(cx, cy, halfW, halfH) {
+    const r = Math.min(halfW, halfH) * 0.92;
+    ctx.beginPath();
+    ctx.moveTo(cx - halfW + r, cy - halfH);
+    ctx.lineTo(cx + halfW - r, cy - halfH);
+    ctx.arcTo(cx + halfW, cy - halfH, cx + halfW, cy - halfH + r, r);
+    ctx.lineTo(cx + halfW, cy + halfH - r);
+    ctx.arcTo(cx + halfW, cy + halfH, cx + halfW - r, cy + halfH, r);
+    ctx.lineTo(cx - halfW + r, cy + halfH);
+    ctx.arcTo(cx - halfW, cy + halfH, cx - halfW, cy + halfH - r, r);
+    ctx.lineTo(cx - halfW, cy - halfH + r);
+    ctx.arcTo(cx - halfW, cy - halfH, cx - halfW + r, cy - halfH, r);
+    ctx.closePath();
+    ctx.fill(); ctx.stroke();
+  }
+  function oval(cx, cy, rx, ry) {
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, rx, ry, 0, 0, TAU);
+    ctx.fill(); ctx.stroke();
+  }
+
+  const cx = W / 2;
+  if (name === 'head') {
+    // oval head with eye + cheekbone hint
+    oval(cx, H * 0.5, W * 0.36, H * 0.42);
+    // eye accents
+    ctx.fillStyle = 'rgba(20, 30, 40, 0.85)';
+    ctx.beginPath(); ctx.ellipse(cx - W * 0.12, H * 0.42, W * 0.04, H * 0.025, 0, 0, TAU); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(cx + W * 0.12, H * 0.42, W * 0.04, H * 0.025, 0, 0, TAU); ctx.fill();
+    // mouth line
+    ctx.beginPath(); ctx.moveTo(cx - W * 0.10, H * 0.66); ctx.lineTo(cx + W * 0.10, H * 0.66); ctx.stroke();
+  } else if (name === 'torso') {
+    // tapered trapezoid — wider at shoulders (top), narrower at hips (bottom)
+    const topHalf = W * 0.40, botHalf = W * 0.28;
+    ctx.beginPath();
+    ctx.moveTo(cx - topHalf, H * 0.08);
+    ctx.lineTo(cx + topHalf, H * 0.08);
+    ctx.quadraticCurveTo(cx + topHalf * 0.92, H * 0.55, cx + botHalf, H * 0.92);
+    ctx.lineTo(cx - botHalf, H * 0.92);
+    ctx.quadraticCurveTo(cx - topHalf * 0.92, H * 0.55, cx - topHalf, H * 0.08);
+    ctx.closePath();
+    ctx.fill(); ctx.stroke();
+    // pec/abs hint — vertical centerline
+    ctx.beginPath(); ctx.moveTo(cx, H * 0.18); ctx.lineTo(cx, H * 0.88); ctx.stroke();
+  } else if (name.startsWith('upperArm') || name === 'armL' || name === 'armR' || name === 'forearm' || name.startsWith('forearm')) {
+    // tall narrow capsule
+    capsule(cx, H * 0.5, W * 0.28, H * 0.45);
+  } else if (name.startsWith('thigh') || name === 'legL' || name === 'legR' || name.startsWith('shin')) {
+    // thicker capsule for thigh; same shape function, slightly wider
+    const wide = name.startsWith('thigh') ? 0.32 : 0.26;
+    capsule(cx, H * 0.5, W * wide, H * 0.45);
+  } else if (name.startsWith('hand')) {
+    // small oval with three finger ridges
+    oval(cx, H * 0.55, W * 0.32, H * 0.36);
+    ctx.beginPath();
+    ctx.moveTo(cx - W * 0.16, H * 0.20); ctx.lineTo(cx - W * 0.16, H * 0.08);
+    ctx.moveTo(cx,             H * 0.16); ctx.lineTo(cx,             H * 0.02);
+    ctx.moveTo(cx + W * 0.16, H * 0.20); ctx.lineTo(cx + W * 0.16, H * 0.08);
+    ctx.stroke();
+  } else if (name.startsWith('foot')) {
+    // forward-pointing rounded shape
+    ctx.beginPath();
+    ctx.moveTo(cx - W * 0.30, H * 0.30);
+    ctx.lineTo(cx + W * 0.30, H * 0.30);
+    ctx.quadraticCurveTo(cx + W * 0.42, H * 0.55, cx + W * 0.22, H * 0.85);
+    ctx.lineTo(cx - W * 0.22, H * 0.85);
+    ctx.quadraticCurveTo(cx - W * 0.42, H * 0.55, cx - W * 0.30, H * 0.30);
+    ctx.closePath();
+    ctx.fill(); ctx.stroke();
+  }
+}
+
+// Public: generate + persist the procedural sample body. Fills only parts
+// without an existing image (won't clobber user uploads). Sets imageId on
+// each part it generates. Caller should re-attach the layer runtime after.
+export async function generateSampleBody(layer, mode = 'complex') {
+  fillPartDefaults(layer);
+  const keys = mode === 'complex' ? PART_KEYS_COMPLEX : PART_KEYS_SIMPLE;
+  const sized = {
+    head: [256, 256], torso: [256, 384],
+    armL: [128, 512], armR: [128, 512], legL: [128, 512], legR: [128, 512],
+    upperArmL: [128, 384], forearmL: [128, 384], handL: [192, 192],
+    upperArmR: [128, 384], forearmR: [128, 384], handR: [192, 192],
+    thighL:    [160, 384], shinL:    [128, 384], footL: [192, 192],
+    thighR:    [160, 384], shinR:    [128, 384], footR: [192, 192],
+  };
+  for (const k of keys) {
+    if (layer.parts[k]?.imageId) continue;  // don't clobber user uploads
+    const [w, h] = sized[k] ?? [256, 384];
+    const canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    drawPart(k, canvas, ctx);
+    // canvas → PNG blob → IDB
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+    const buf = await blob.arrayBuffer();
+    const hash = await sha256Hex(buf);
+    await putImage(hash, blob, `sample-${k}.png`);
+    const existing = layer.parts[k] ?? defaultPart();
+    layer.parts[k] = { ...defaultPart(), ...existing, imageId: hash, name: `sample-${k}.png` };
+  }
 }
 
 const TAU = Math.PI * 2;
@@ -211,7 +362,9 @@ export async function attachDancerImg(regl, layer, audioState) {
       textures[key] = null;
     }
   }
-  await Promise.all(PART_KEYS.map(loadPart));
+  // Load textures for ALL keys (both simple + complex modes) so toggling the
+  // complexBody flag mid-session shows the right parts without an attach round-trip.
+  await Promise.all(PART_KEYS_ALL.map(loadPart));
 
   // Public method so the UI can trigger reload after an upload.
   async function reloadPart(key) {
@@ -312,34 +465,49 @@ export async function attachDancerImg(regl, layer, audioState) {
       // Clear FBO to bg via regl clear
       regl.clear({ color: [...(layer.bg ?? [0,0,0]), 1.0], depth: 1, framebuffer: fbo });
 
-      // Draw parts back-to-front: legs → torso → arms → head.
-      // v2 bend mode (layer.bendLimbs): each limb splits into two rigid
-      // segments meeting at the elbow/knee. Each segment samples half of the
-      // limb's texture (split at part.splitV). Texture bands meet at the
-      // image's splitV row so the joint appears continuous.
+      // Draw parts back-to-front. Two modes:
+      //   simple  (6 parts):  optional v2 bend-mode splits each limb image into 2 rigid segments.
+      //   complex (14 parts): each anatomical segment is its own uploaded image, no bend math needed.
       const drawCalls = [];
       const p = layer.parts;
-      const bend = layer.bendLimbs !== false;  // default on
 
-      function pushLimb(tex, start, mid, end, baseWidth, ov) {
-        if (!tex) return;
-        if (bend) {
-          const splitV = ov?.splitV ?? 0.5;
-          // upper segment: top of image (splitV..1.0) → start → mid
-          drawCalls.push({ ...spriteFromBones(start, mid, baseWidth, ov, splitV, 1.0), tex });
-          // lower segment: bottom of image (0..splitV) → mid → end
-          drawCalls.push({ ...spriteFromBones(mid,   end, baseWidth, ov, 0.0, splitV), tex });
-        } else {
-          drawCalls.push({ ...spriteFromBones(start, end, baseWidth, ov, 0, 1), tex });
+      if (layer.complexBody) {
+        // ── COMPLEX BODY: 14 parts ──
+        // Legs first (back-to-front), then torso, then arms, then hands/feet, then head.
+        if (textures.thighL)  drawCalls.push({ ...spriteFromBones(j.hipL,   j.kneeL,  layer.widthLimb,  p.thighL,  0, 1), tex: textures.thighL });
+        if (textures.thighR)  drawCalls.push({ ...spriteFromBones(j.hipR,   j.kneeR,  layer.widthLimb,  p.thighR,  0, 1), tex: textures.thighR });
+        if (textures.shinL)   drawCalls.push({ ...spriteFromBones(j.kneeL,  j.ankleL, layer.widthLimb,  p.shinL,   0, 1), tex: textures.shinL });
+        if (textures.shinR)   drawCalls.push({ ...spriteFromBones(j.kneeR,  j.ankleR, layer.widthLimb,  p.shinR,   0, 1), tex: textures.shinR });
+        if (textures.footL)   drawCalls.push({ ...spriteFromHead(j.ankleL,  j.scale,  layer.widthFoot,  p.footL),         tex: textures.footL });
+        if (textures.footR)   drawCalls.push({ ...spriteFromHead(j.ankleR,  j.scale,  layer.widthFoot,  p.footR),         tex: textures.footR });
+        if (textures.torso)   drawCalls.push({ ...spriteFromBones(j.hip,    j.shldr,  layer.widthTorso, p.torso,   0, 1), tex: textures.torso });
+        if (textures.upperArmL) drawCalls.push({ ...spriteFromBones(j.shldrL, j.elbowL, layer.widthLimb, p.upperArmL, 0, 1), tex: textures.upperArmL });
+        if (textures.upperArmR) drawCalls.push({ ...spriteFromBones(j.shldrR, j.elbowR, layer.widthLimb, p.upperArmR, 0, 1), tex: textures.upperArmR });
+        if (textures.forearmL)  drawCalls.push({ ...spriteFromBones(j.elbowL, j.wristL, layer.widthLimb, p.forearmL,  0, 1), tex: textures.forearmL });
+        if (textures.forearmR)  drawCalls.push({ ...spriteFromBones(j.elbowR, j.wristR, layer.widthLimb, p.forearmR,  0, 1), tex: textures.forearmR });
+        if (textures.handL)   drawCalls.push({ ...spriteFromHead(j.wristL,  j.scale,  layer.widthHand,  p.handL),         tex: textures.handL });
+        if (textures.handR)   drawCalls.push({ ...spriteFromHead(j.wristR,  j.scale,  layer.widthHand,  p.handR),         tex: textures.handR });
+        if (textures.head)    drawCalls.push({ ...spriteFromHead(j.head,    j.scale,  layer.widthHead,  p.head),          tex: textures.head });
+      } else {
+        // ── SIMPLE BODY: 6 parts (with optional v2 bend mode) ──
+        const bend = layer.bendLimbs !== false;
+        function pushLimb(tex, start, mid, end, baseWidth, ov) {
+          if (!tex) return;
+          if (bend) {
+            const splitV = ov?.splitV ?? 0.5;
+            drawCalls.push({ ...spriteFromBones(start, mid, baseWidth, ov, splitV, 1.0), tex });
+            drawCalls.push({ ...spriteFromBones(mid,   end, baseWidth, ov, 0.0, splitV), tex });
+          } else {
+            drawCalls.push({ ...spriteFromBones(start, end, baseWidth, ov, 0, 1), tex });
+          }
         }
+        pushLimb(textures.legL, j.hipL,   j.kneeL,  j.ankleL, layer.widthLimb,  p.legL);
+        pushLimb(textures.legR, j.hipR,   j.kneeR,  j.ankleR, layer.widthLimb,  p.legR);
+        if (textures.torso) drawCalls.push({ ...spriteFromBones(j.hip, j.shldr, layer.widthTorso, p.torso, 0, 1), tex: textures.torso });
+        pushLimb(textures.armL, j.shldrL, j.elbowL, j.wristL, layer.widthLimb,  p.armL);
+        pushLimb(textures.armR, j.shldrR, j.elbowR, j.wristR, layer.widthLimb,  p.armR);
+        if (textures.head)  drawCalls.push({ ...spriteFromHead(j.head, j.scale, layer.widthHead, p.head), tex: textures.head });
       }
-
-      pushLimb(textures.legL, j.hipL,   j.kneeL,  j.ankleL, layer.widthLimb,  p.legL);
-      pushLimb(textures.legR, j.hipR,   j.kneeR,  j.ankleR, layer.widthLimb,  p.legR);
-      if (textures.torso) drawCalls.push({ ...spriteFromBones(j.hip, j.shldr, layer.widthTorso, p.torso, 0, 1), tex: textures.torso });
-      pushLimb(textures.armL, j.shldrL, j.elbowL, j.wristL, layer.widthLimb,  p.armL);
-      pushLimb(textures.armR, j.shldrR, j.elbowR, j.wristR, layer.widthLimb,  p.armR);
-      if (textures.head)  drawCalls.push({ ...spriteFromHead(j.head, j.scale, layer.widthHead, p.head), tex: textures.head });
 
       if (drawCalls.length) drawPart(drawCalls);
     },

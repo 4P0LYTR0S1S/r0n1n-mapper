@@ -2,6 +2,28 @@
 
 All notable changes to r0n1n-mapper. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning is [SemVer](https://semver.org/) with calver-style date stamps for pre-1.0 milestones.
 
+## [0.5.0] — 2026-05-23
+
+**Complex body + procedural sample.** The dancer-img layer gains a 14-part anatomical rig (head, torso, upper arm / forearm / hand × 2, thigh / shin / foot × 2) where each segment is its own uploaded sprite — no bend-math compromise, each piece rotates around its own joint anchor. A `✦ generate sample` button procedurally draws a stylized neon cyberpunk body to IDB so the rig comes alive immediately without uploads. The simple 6-part path remains as default; complex mode is an opt-in toggle.
+
+### Added
+
+- **`layer.complexBody`** boolean toggle on the dancer-img layer (default `false`). When `true`, the layer renders 14 anatomical segments instead of 6; the v2 bend-limbs toggle becomes a no-op (each segment is already its own image).
+- **8 new part keys** on the dancer-img layer schema: `upperArmL`, `forearmL`, `handL`, `upperArmR`, `forearmR`, `handR`, `thighL`, `shinL`, `footL`, `thighR`, `shinR`, `footR`. Hands + feet render as static-anchor sprites at wrist/ankle joints; upper limbs + forearms + thighs + shins render as rotating segments between adjacent joints.
+- **`layer.widthHand`** + **`layer.widthFoot`** for the static-anchor sprites (defaults 0.045 / 0.05 relative to canvas).
+- **`generateSampleBody(layer, mode)`** — exported procedural body generator. Renders each part to a 2D canvas with a cyan→magenta gradient + cyan outline + anatomy hints (eye dots, finger ridges, foot taper), saves as PNG to IndexedDB, and binds the resulting `imageId` to the corresponding part. Won't clobber user-uploaded parts. Triggered from the layer panel's `✦ generate sample` button.
+- **UI: collapsible part panels now scale to the active mode** — 6 panels in simple mode, 14 panels in complex mode. Mode toggle + sample button live at the top of the dancer-img controls; bend toggle hides in complex mode (irrelevant there).
+- **`PART_KEYS_SIMPLE`** / **`PART_KEYS_COMPLEX`** / **`PART_KEYS_ALL`** exports from the layer module. `PART_KEYS` (legacy alias) still resolves to the simple set for back-compat.
+
+### Fixed
+
+- **`ingestPartImage` was nuking per-part overrides** — replacing `layer.parts[partKey]` with a fresh `{ imageId, name }` object wiped any rotation / scale / offset / flip the user had tuned. Now preserves the existing per-part block and only swaps `imageId` + `name`.
+
+### Changed
+
+- **Texture-load on attach iterates `PART_KEYS_ALL`** (was `PART_KEYS`) so toggling complex mode mid-session immediately renders the right parts without a re-attach.
+- **`emptyDancerImgLayer` initializes all 14+ part keys** (with `imageId: null` defaults). Old saved projects auto-fill missing keys via `fillPartDefaults` on attach.
+
 ## [0.4.2] — 2026-05-23
 
 **Pure FOSS posture + groove pass.** Drops the commercial dual-license track from the project's public framing — r0n1n-mapper is now AGPL-3.0-or-later only, no commercial waiver, no proprietary path. Plus a sensitivity pass on the dancer's audio reactivity so the figure noticeably grooves to bass / mid / high / beat instead of merely swaying. UI string `audio intensity` renamed to `Audio Reactivity` everywhere it shows.
