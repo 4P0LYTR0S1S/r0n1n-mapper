@@ -46,7 +46,7 @@ export function emptyDancerImgLayer(id) {
     blendMode: 'normal',
     parts,
     bg: [0.0, 0.0, 0.0],
-    audioIntensity: 1.0,
+    audioIntensity: 1.5,
     widthHead: 0.10,    // base sprite width relative to canvas
     widthLimb: 0.06,    // arm/leg sprite width
     widthTorso: 0.14,
@@ -101,35 +101,37 @@ function computeJoints(t, audio, intensity) {
   const scale = (0.40 + env * 0.05) / (1 + 0.2 * bass);
   const root  = [0.5, 0.30];
 
-  const bounce = Math.sin(phi) * 0.018 - bass * 0.045;
-  const hip   = [root[0],                                       root[1] + scale * 0.20 + bounce];
-  const spine = [hip[0]   + Math.sin(phi * 0.5) * 0.015 * mid,  hip[1]   + scale * 0.20];
-  const shldr = [spine[0],                                       spine[1] + scale * 0.10];
-  const head  = [shldr[0] + Math.sin(phi * 0.5) * 0.012,         shldr[1] + scale * 0.10 + env * 0.015];
+  // v0.4.2 wiggle pass: amplitudes ~2× v0.4.1, mirrors the SDF dancer in
+  // shader-effects.js so the SDF + image dancers move in lockstep.
+  const bounce = Math.sin(phi) * 0.035 - bass * 0.090;
+  const hip   = [root[0],                                        root[1] + scale * 0.20 + bounce];
+  const spine = [hip[0]   + Math.sin(phi * 0.5) * 0.030 * mid,   hip[1]   + scale * 0.20];
+  const shldr = [spine[0] + Math.sin(phi * 0.5) * 0.012 * mid,   spine[1] + scale * 0.10];
+  const head  = [shldr[0] + Math.sin(phi * 0.5) * 0.025,          shldr[1] + scale * 0.10 + env * 0.030];
 
-  const armSwingL = Math.sin(phi + Math.PI) * (0.35 + mid);
-  const armSwingR = Math.sin(phi)           * (0.35 + mid);
+  const armSwingL = Math.sin(phi + Math.PI) * (0.55 + mid * 1.8);
+  const armSwingR = Math.sin(phi)           * (0.55 + mid * 1.8);
   const shldrL = [shldr[0] - scale * 0.07, shldr[1]];
   const shldrR = [shldr[0] + scale * 0.07, shldr[1]];
-  const elbowL = [shldrL[0] + -scale * 0.05 * (1 + 0.4 * armSwingL), shldrL[1] + -scale * 0.10 * (1 + 0.4 * armSwingL)];
-  const elbowR = [shldrR[0] +  scale * 0.05 * (1 + 0.4 * armSwingR), shldrR[1] + -scale * 0.10 * (1 + 0.4 * armSwingR)];
-  const jitterAmp = 0.012 * high;
-  const wristL = [elbowL[0] + -scale * 0.03 + Math.sin(phi * 1.7) * 0.02 + (Math.random() - 0.5) * jitterAmp,
-                  elbowL[1] + -scale * 0.08                              + (Math.random() - 0.5) * jitterAmp];
-  const wristR = [elbowR[0] +  scale * 0.03 + Math.sin(phi * 1.7) * 0.02 + (Math.random() - 0.5) * jitterAmp,
-                  elbowR[1] + -scale * 0.08                              + (Math.random() - 0.5) * jitterAmp];
+  const elbowL = [shldrL[0] + -scale * 0.05 * (1 + 0.65 * armSwingL), shldrL[1] + -scale * 0.10 * (1 + 0.65 * armSwingL)];
+  const elbowR = [shldrR[0] +  scale * 0.05 * (1 + 0.65 * armSwingR), shldrR[1] + -scale * 0.10 * (1 + 0.65 * armSwingR)];
+  const jitterAmp = 0.025 * high;
+  const wristL = [elbowL[0] + -scale * 0.03 + Math.sin(phi * 1.7) * 0.045 + (Math.random() - 0.5) * jitterAmp,
+                  elbowL[1] + -scale * 0.08                                + (Math.random() - 0.5) * jitterAmp];
+  const wristR = [elbowR[0] +  scale * 0.03 + Math.sin(phi * 1.7) * 0.045 + (Math.random() - 0.5) * jitterAmp,
+                  elbowR[1] + -scale * 0.08                                + (Math.random() - 0.5) * jitterAmp];
 
-  const legSwingL = Math.sin(phi)           * (0.20 + mid * 0.4);
-  const legSwingR = Math.sin(phi + Math.PI) * (0.20 + mid * 0.4);
-  const kneeBend  = 0.5 + bass * 0.4;
+  const legSwingL = Math.sin(phi)           * (0.35 + mid * 0.8);
+  const legSwingR = Math.sin(phi + Math.PI) * (0.35 + mid * 0.8);
+  const kneeBend  = 0.5 + bass * 0.8;
   const hipL = [hip[0] - scale * 0.05, hip[1]];
   const hipR = [hip[0] + scale * 0.05, hip[1]];
-  const kneeL = [hipL[0] + -scale * 0.04 + legSwingL * scale * 0.06, hipL[1] - scale * 0.13 * kneeBend];
-  const kneeR = [hipR[0] +  scale * 0.04 + legSwingR * scale * 0.06, hipR[1] - scale * 0.13 * kneeBend];
-  const ankleJ = 0.008 * high;
-  const ankleL = [kneeL[0] + -scale * 0.02 + legSwingL * scale * 0.04 + (Math.random() - 0.5) * ankleJ,
+  const kneeL = [hipL[0] + -scale * 0.04 + legSwingL * scale * 0.12, hipL[1] - scale * 0.13 * kneeBend];
+  const kneeR = [hipR[0] +  scale * 0.04 + legSwingR * scale * 0.12, hipR[1] - scale * 0.13 * kneeBend];
+  const ankleJ = 0.018 * high;
+  const ankleL = [kneeL[0] + -scale * 0.02 + legSwingL * scale * 0.08 + (Math.random() - 0.5) * ankleJ,
                   kneeL[1] -  scale * 0.13 * kneeBend                  + (Math.random() - 0.5) * ankleJ];
-  const ankleR = [kneeR[0] +  scale * 0.02 + legSwingR * scale * 0.04 + (Math.random() - 0.5) * ankleJ,
+  const ankleR = [kneeR[0] +  scale * 0.02 + legSwingR * scale * 0.08 + (Math.random() - 0.5) * ankleJ,
                   kneeR[1] -  scale * 0.13 * kneeBend                  + (Math.random() - 0.5) * ankleJ];
 
   return { head, hip, spine, shldr, shldrL, shldrR, elbowL, elbowR, wristL, wristR,

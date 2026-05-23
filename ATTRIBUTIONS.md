@@ -40,8 +40,6 @@ copyleft on the combined work, and AGPL's copyleft applies to the resulting
 work as a whole). hydra-synth is itself AGPL, which is consistent with this
 project's license.
 
-For dual-licensing of this project under terms other than AGPL, contact the
-collective via the address in `SECURITY.md`. Note that dual-licensing this
-project under proprietary terms would require either replacing hydra-synth
-with a permissively-licensed equivalent or negotiating a license exception
-with the hydra-synth maintainers.
+This project is licensed AGPL-3.0-or-later. There is no dual-license track,
+no proprietary path, no commercial waiver. AGPL is the only license. hydra-synth
+being itself AGPL is therefore aligned, not a constraint.

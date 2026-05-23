@@ -21,7 +21,7 @@ export function emptyTitleLayer(id) {
     color: [0.0, 1.0, 0.85],   // primary text color
     glowColor: [1.0, 0.20, 0.85],  // glow / bloom color
     glow: 1.0,              // base glow intensity 0..3
-    audioIntensity: 1.4,    // multiplier on reactive bands
+    audioIntensity: 1.8,    // multiplier on reactive bands
     revealMode: 1,          // 0=instant, 1=char-by-char, 2=word-by-word, 3=fade-in
     revealSpeed: 4,         // chars per beat at BPM
     scale: 1.0,             // base scale

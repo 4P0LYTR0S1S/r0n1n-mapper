@@ -10,9 +10,9 @@ import { attachSolid } from './layers/solid-layer.js';
 import { attachWebcam, emptyWebcamLayer } from './layers/webcam-layer.js';
 import { attachShader, emptyShaderLayer } from './layers/shader-layer.js';
 import { attachHydra, emptyHydraLayer } from './layers/hydra-layer.js';
-import { attachDancerImg, emptyDancerImgLayer, ingestPartImage, PART_KEYS, PART_LABELS } from './layers/dancer-img-layer.js?v=3';
+import { attachDancerImg, emptyDancerImgLayer, ingestPartImage, PART_KEYS, PART_LABELS } from './layers/dancer-img-layer.js?v=4';
 import { attachTitle, emptyTitleLayer } from './layers/title-layer.js?v=1';
-import { EFFECT_NAMES } from './layers/shader-effects.js?v=3';
+import { EFFECT_NAMES } from './layers/shader-effects.js?v=4';
 import { initAudio, tap as tapTempo, listAudioInputs, currentAudioDeviceId } from './audio/analyser.js';
 import { createAudioState } from './audio/uniforms.js';
 import { emptySnapshot, captureSnapshot, applySnapshot, djMorph } from './project/snapshots.js';
@@ -355,7 +355,7 @@ function buildTitleControls(layer) {
 
   wrap.append(label('glow'));
   wrap.append(rangeInput(layer, 'glow', 0, 3, 0.05));
-  wrap.append(label('audio intensity'));
+  wrap.append(label('Audio Reactivity'));
   wrap.append(rangeInput(layer, 'audioIntensity', 0, 3, 0.05));
 
   wrap.append(label('color'));
@@ -477,7 +477,7 @@ function buildDancerImgControls(layer) {
     wrap.append(det);
   }
 
-  wrap.append(label('audio intensity'));
+  wrap.append(label('Audio Reactivity'));
   if (layer.audioIntensity === undefined) layer.audioIntensity = 1.0;
   wrap.append(rangeInput(layer, 'audioIntensity', 0, 3, 0.05));
 
@@ -527,7 +527,7 @@ function buildShaderControls(layer) {
     store.update('', () => {
       layer.effect = sel.value;
       // re-init params to defaults of new effect
-      import('./layers/shader-effects.js?v=3').then(m => {
+      import('./layers/shader-effects.js?v=4').then(m => {
         layer.params = structuredClone(m.EFFECTS[sel.value].defaultParams);
         // re-attach runtime
         const old = layerRuntimes.get(layer.id);
@@ -540,12 +540,12 @@ function buildShaderControls(layer) {
   wrap.append(sel);
 
   // audio reactivity intensity — scales u_bass/mid/high/env going into the shader
-  wrap.append(label('audio intensity'));
+  wrap.append(label('Audio Reactivity'));
   if (layer.audioIntensity === undefined) layer.audioIntensity = 1.0;
   wrap.append(rangeInput(layer, 'audioIntensity', 0, 3, 0.05));
 
   // params from current effect's schema
-  import('./layers/shader-effects.js?v=3').then(m => {
+  import('./layers/shader-effects.js?v=4').then(m => {
     const schema = m.EFFECTS[layer.effect]?.schema || [];
     for (const s of schema) {
       wrap.append(label(s.key));

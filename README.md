@@ -174,20 +174,23 @@ is an archonic pattern, and naming it that way is part of refusing it.
 
 ## License
 
-**AGPL-3.0-or-later.** See `LICENSE` for the full text.
+**AGPL-3.0-or-later. No exceptions, no dual track, no commercial waiver.** See `LICENSE` for the full text.
 
-**Free for the commons.** Artists, performers, researchers, students, hackers,
-hobbyists, non-profits, educational use — the AGPL grants you full rights.
-Fork it, hack it, ship your tour with it, teach with it. The only obligation
-is share-back: your improvements must remain AGPL.
+**Free for everyone.** Artists, performers, researchers, students, hackers, hobbyists, non-profits, educators, individuals, small studios, festivals, collectives, communities — the AGPL grants you full rights. Fork it, hack it, ship your tour with it, teach with it, project it on the side of a building. Use it for paid gigs. Use it to make art that pays your rent. The license cares about source disclosure, not commerce.
 
-**Companies negotiate.** If you are building a closed-source commercial product
-or a hosted SaaS off this code and don't want to release your fork under AGPL,
-you need a separate commercial license. The collective maintains a dual-license
-track that waives AGPL's network-use and copyleft clauses for commercial terms.
-Contact details in `SECURITY.md`.
+**The deal: share-back.** Your improvements must remain AGPL-3.0-or-later. If you offer modified versions as a network service (including hosted SaaS), the AGPL network-use clause requires you publish the source of those modifications. That's the whole bargain. Build on this code, contribute back what you change.
 
-FOSS with teeth: free for the commons, terms for the extractors.
+**No escape hatch for enclosure.** This project has no dual-license, no commercial side-door, no proprietary fork track. If you want to build a closed-source product around code from this repo, that path is not available here. The license is the answer. AGPL is the answer because the project is intentionally non-extractive — it's designed to survive without selling escape hatches to enterprises that would otherwise enclose the work.
+
+**Escape hatches that exist by design** (preserved by AGPL itself, not granted by us):
+- The right to fork forever. No key-holder controls this project's future.
+- The right to redistribute. With source.
+- The right to modify, including for commercial use, including for paid services. With source.
+- The right for the community to replace us if we ever drift. The license is permanent on existing releases.
+
+If you read this and want to use r0n1n-mapper, you can. If your legal team won't approve AGPL, that's a legal-policy decision your organization made about what software it admits — not a gate we're holding closed. The code is here. The terms are unambiguous.
+
+`sP4rK gR0ws.`
 
 ## Repo conventions
 

@@ -28,12 +28,12 @@ Aim is response within 5 business days, fix within 30 days for confirmed
 vulnerabilities. The collective follows a coordinated disclosure model: please
 do not publicly disclose before a fix is shipped.
 
-## Commercial dual-license
+## Licensing
 
-AGPL is free for the commons. If your use case is closed-source commercial
-distribution or hosted SaaS that doesn't want to release source under AGPL,
-you need a separate license. The collective maintains a dual-license track
-that waives the network-use and copyleft clauses for commercial terms.
+AGPL-3.0-or-later, period. This project has no dual-license track,
+no commercial waiver, no closed-source path. The AGPL terms apply
+to all use cases. See the License section in `README.md` for the
+full reasoning.
 
-Contact `security@apolytrosis.dev` (also the disclosure mailbox above).
-Terms scale with use case — bring your scope, we negotiate.
+If your organization's legal policy won't admit AGPL software, the
+answer is to change that policy — not to ask us for an exception.

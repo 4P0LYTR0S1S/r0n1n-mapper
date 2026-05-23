@@ -237,37 +237,40 @@ const DANCER_FRAG = `
 
     // Anchor at lower-center; bass pushes hips DOWN (squat into kick)
     vec2 root = vec2(0.5, 0.30);
-    float bounce = sin(phi) * 0.018 - u_bass * 0.045;
+    // v0.4.2 wiggle pass: amplitudes ~2× v0.4.1. Joints have more visible
+    // travel + bass + beat reaction. Combined with default audioIntensity 1.5,
+    // the figure noticeably grooves instead of swaying.
+    float bounce = sin(phi) * 0.035 - u_bass * 0.090;
     vec2 hip   = root + vec2(0.0, scale * 0.20 + bounce);
-    vec2 spine = hip  + vec2(sin(phi * 0.5) * 0.015 * u_mid, scale * 0.20);
-    vec2 shldr = spine + vec2(0.0, scale * 0.10);
-    vec2 head  = shldr + vec2(sin(phi * 0.5) * 0.012, scale * 0.10 + u_env * 0.015);
+    vec2 spine = hip  + vec2(sin(phi * 0.5) * 0.030 * u_mid, scale * 0.20);
+    vec2 shldr = spine + vec2(sin(phi * 0.5) * 0.012 * u_mid, scale * 0.10);
+    vec2 head  = shldr + vec2(sin(phi * 0.5) * 0.025, scale * 0.10 + u_env * 0.030);
 
     // Arms — left and right phase-offset by π (natural opposite-arm swing)
-    float armSwingL = sin(phi + 3.14159) * (0.35 + u_mid * 1.0);
-    float armSwingR = sin(phi)           * (0.35 + u_mid * 1.0);
+    float armSwingL = sin(phi + 3.14159) * (0.55 + u_mid * 1.8);
+    float armSwingR = sin(phi)           * (0.55 + u_mid * 1.8);
     vec2 shldrL = shldr + vec2(-scale * 0.07, 0.0);
     vec2 shldrR = shldr + vec2( scale * 0.07, 0.0);
-    vec2 elbowL = shldrL + vec2(-scale * 0.05, -scale * 0.10) * (1.0 + 0.4 * armSwingL);
-    vec2 elbowR = shldrR + vec2( scale * 0.05, -scale * 0.10) * (1.0 + 0.4 * armSwingR);
-    vec2 wristL = elbowL + vec2(-scale * 0.03 + sin(phi * 1.7) * 0.02, -scale * 0.08)
-                  + hash22(vec2(phi, 1.0)) * 0.012 * u_high;
-    vec2 wristR = elbowR + vec2( scale * 0.03 + sin(phi * 1.7) * 0.02, -scale * 0.08)
-                  + hash22(vec2(phi, 2.0)) * 0.012 * u_high;
+    vec2 elbowL = shldrL + vec2(-scale * 0.05, -scale * 0.10) * (1.0 + 0.65 * armSwingL);
+    vec2 elbowR = shldrR + vec2( scale * 0.05, -scale * 0.10) * (1.0 + 0.65 * armSwingR);
+    vec2 wristL = elbowL + vec2(-scale * 0.03 + sin(phi * 1.7) * 0.045, -scale * 0.08)
+                  + hash22(vec2(phi, 1.0)) * 0.025 * u_high;
+    vec2 wristR = elbowR + vec2( scale * 0.03 + sin(phi * 1.7) * 0.045, -scale * 0.08)
+                  + hash22(vec2(phi, 2.0)) * 0.025 * u_high;
 
     // Legs — opposite phase to arms for walking-style gait
-    float legSwingL = sin(phi)           * (0.20 + u_mid * 0.4);
-    float legSwingR = sin(phi + 3.14159) * (0.20 + u_mid * 0.4);
+    float legSwingL = sin(phi)           * (0.35 + u_mid * 0.8);
+    float legSwingR = sin(phi + 3.14159) * (0.35 + u_mid * 0.8);
     // Knee bend deepens with bass — proper squat on kicks
-    float kneeBend = 0.5 + u_bass * 0.4;
+    float kneeBend = 0.5 + u_bass * 0.8;
     vec2 hipL = hip + vec2(-scale * 0.05, 0.0);
     vec2 hipR = hip + vec2( scale * 0.05, 0.0);
-    vec2 kneeL = hipL + vec2(-scale * 0.04 + legSwingL * scale * 0.06, -scale * 0.13 * kneeBend);
-    vec2 kneeR = hipR + vec2( scale * 0.04 + legSwingR * scale * 0.06, -scale * 0.13 * kneeBend);
-    vec2 ankleL = kneeL + vec2(-scale * 0.02 + legSwingL * scale * 0.04, -scale * 0.13 * kneeBend)
-                  + hash22(vec2(phi, 3.0)) * 0.008 * u_high;
-    vec2 ankleR = kneeR + vec2( scale * 0.02 + legSwingR * scale * 0.04, -scale * 0.13 * kneeBend)
-                  + hash22(vec2(phi, 4.0)) * 0.008 * u_high;
+    vec2 kneeL = hipL + vec2(-scale * 0.04 + legSwingL * scale * 0.12, -scale * 0.13 * kneeBend);
+    vec2 kneeR = hipR + vec2( scale * 0.04 + legSwingR * scale * 0.12, -scale * 0.13 * kneeBend);
+    vec2 ankleL = kneeL + vec2(-scale * 0.02 + legSwingL * scale * 0.08, -scale * 0.13 * kneeBend)
+                  + hash22(vec2(phi, 3.0)) * 0.018 * u_high;
+    vec2 ankleR = kneeR + vec2( scale * 0.02 + legSwingR * scale * 0.08, -scale * 0.13 * kneeBend)
+                  + hash22(vec2(phi, 4.0)) * 0.018 * u_high;
 
     // Bones — union of capsule SDFs
     float t = u_thick * (1.0 + 0.3 * u_beat);

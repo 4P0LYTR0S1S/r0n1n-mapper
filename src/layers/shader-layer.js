@@ -2,7 +2,7 @@
 // each frame. Exposes the FBO's color attachment as the layer texture for
 // the compositor to read.
 
-import { EFFECTS } from './shader-effects.js?v=3';
+import { EFFECTS } from './shader-effects.js?v=4';
 
 export function emptyShaderLayer(id, effect = 'fbm') {
   const meta = EFFECTS[effect];

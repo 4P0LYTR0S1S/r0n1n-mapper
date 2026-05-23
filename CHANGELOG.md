@@ -2,6 +2,34 @@
 
 All notable changes to r0n1n-mapper. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning is [SemVer](https://semver.org/) with calver-style date stamps for pre-1.0 milestones.
 
+## [0.4.2] — 2026-05-23
+
+**Pure FOSS posture + groove pass.** Drops the commercial dual-license track from the project's public framing — r0n1n-mapper is now AGPL-3.0-or-later only, no commercial waiver, no proprietary path. Plus a sensitivity pass on the dancer's audio reactivity so the figure noticeably grooves to bass / mid / high / beat instead of merely swaying. UI string `audio intensity` renamed to `Audio Reactivity` everywhere it shows.
+
+### Changed
+
+- **License posture: AGPL-3.0-or-later only.** README, SECURITY.md, and ATTRIBUTIONS.md updated to drop all mentions of dual-licensing or commercial waiver. The license is now stated as unconditional: free for everyone (including paid use for individual artists, performers, small studios, festivals, etc.), share-back required for modifications and network deployments, no proprietary escape hatch. The "escape hatches that exist by design" preserved by AGPL itself (right to fork, redistribute, modify) are spelled out explicitly.
+- **`audio intensity` → `Audio Reactivity`** in the per-layer panel labels (dancer-img, shader, title). Internal state field `audioIntensity` unchanged for backward compat with saved projects.
+
+### Tuned
+
+- **Dancer joint amplitudes doubled** in both `shader-effects.js` (SDF dancer) and `dancer-img-layer.js` (image dancer's `computeJoints`). The two paths stay in lockstep so SDF + image dancers move together.
+  - hip bounce on bass: `0.045` → `0.090`
+  - sin component of bounce: `0.018` → `0.035`
+  - arm swing amplitude: `(0.35 + mid*1.0)` → `(0.55 + mid*1.8)`
+  - elbow extension on swing: `0.4×` → `0.65×`
+  - wrist sin wiggle: `0.02` → `0.045`
+  - wrist jitter on highs: `0.012` → `0.025`
+  - leg swing: `(0.20 + mid*0.4)` → `(0.35 + mid*0.8)`
+  - knee bend on bass: `0.4×` → `0.8×`
+  - knee horizontal travel: `scale*0.06` → `scale*0.12`
+  - ankle jitter: `0.008` → `0.018`
+- **Default `audioIntensity`** on new layers raised so the wiggle is immediate without slider tuning:
+  - dancer-img: `1.0` → `1.5`
+  - title: `1.4` → `1.8`
+
+The figure now visibly squats on kicks, swings limbs to the mids, and jitters at the extremities on hi-hats — at default settings, with no slider tuning required.
+
 ## [0.4.1] — 2026-05-23
 
 Dancer-img bent limbs. Each arm now renders as two rigid sprite segments (shoulder→elbow + elbow→wrist) instead of a single rigid stick from shoulder to wrist; legs likewise (hip→knee→ankle). Reads as "puppet with joints" instead of "puppet with bones." The upper segment samples the top half of the limb's source image; the lower segment samples the bottom half; both segments meet at the image's split row so the joint appears visually continuous. Default ON for new dancer-img layers; per-layer toggle preserves the v1 single-segment puppet aesthetic for users who prefer it.
