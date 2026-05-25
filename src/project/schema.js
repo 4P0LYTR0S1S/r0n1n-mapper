@@ -3,8 +3,10 @@
 
 import { defaultMeshPoints, DEFAULT_GRID_X, DEFAULT_GRID_Y } from '../surface/warp-mesh.js';
 import { defaultKey } from '../keyer/keyer-glsl.js';
+import { emptyLfos } from '../mod/dispatcher.js?v=1';
+import { emptyTimeline } from '../timeline/timeline.js?v=1';
 
-export const SCHEMA_VERSION = 7;
+export const SCHEMA_VERSION = 10;
 
 export function emptyProject() {
   return {
@@ -20,6 +22,13 @@ export function emptyProject() {
     osc:  { bindings: [], url: 'ws://127.0.0.1:8787' },
     audio: { deviceId: null },
     djMode: { enabled: false, deckASnapId: null, deckBSnapId: null, value: 0.0 },
+    // v0.8.0 — Mod Matrix: bindings between params and modulation sources.
+    // `mods` is the binding list (operator-built); `lfos` is the source pool.
+    mods: [],
+    lfos: emptyLfos(),
+    // v0.9 — Beat-Locked Timeline: events scheduled by bar position, playback
+    // follows the BPM clock. Auto-applies snapshots as the cursor crosses them.
+    timeline: emptyTimeline(),
   };
 }
 
@@ -31,6 +40,12 @@ export function emptySurface(id, layerId) {
     visible: true,
     opacity: 1.0,
     blendMode: 'normal',
+    // v0.7.x — outputTarget routes a surface to a specific output tab.
+    // 'all' = render on every output tab (default, single-output behavior).
+    // 'A' | 'B' | 'C' = render only on the output tab whose URL hash matches.
+    // Open output.html#A for output A, #B for B, #C for C; output.html with no
+    // hash renders ALL surfaces (so the existing single-output flow is unchanged).
+    outputTarget: 'all',
     layerIds: layerId ? [layerId] : [],
     grade: { lutId: null, intensity: 1.0 },
     warp: {
@@ -174,6 +189,34 @@ const MIGRATIONS = {
       ...proj,
       version: 7,
       output: { mode: prev.mode ?? 'fit', width: prev.width ?? 1920, height: prev.height ?? 1080 },
+    };
+  },
+  7: (proj) => {
+    // v7 → v8: surface.outputTarget routes surfaces to specific output tabs
+    // (A/B/C) for multi-projector rigs. Backfill 'all' on existing surfaces so
+    // single-output projects keep behaving identically.
+    const out = { ...proj, version: 8 };
+    out.surfaces = (proj.surfaces ?? []).map(s => ({
+      ...s,
+      outputTarget: s.outputTarget ?? 'all',
+    }));
+    return out;
+  },
+  8: (proj) => {
+    // v8 → v9: Mod Matrix. Empty bindings list + default LFO pool.
+    return {
+      ...proj,
+      version: 9,
+      mods: proj.mods ?? [],
+      lfos: proj.lfos ?? emptyLfos(),
+    };
+  },
+  9: (proj) => {
+    // v9 → v10: Beat-Locked Timeline. Empty event list, stopped state.
+    return {
+      ...proj,
+      version: 10,
+      timeline: proj.timeline ?? emptyTimeline(),
     };
   },
 };

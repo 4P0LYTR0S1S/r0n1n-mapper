@@ -19,7 +19,10 @@
   <div class="brand">r0n1n <span>// mapper</span></div>
   <div class="actions">
     <button id="btn-add-surface">+ surface</button>
-    <button id="btn-output">open output</button>
+    <button id="btn-output" title="open the default output tab (renders ALL surfaces regardless of routing)">open output</button>
+    <button id="btn-output-a" title="open output A — renders surfaces routed to 'A' or 'all'" style="font-size:10px; padding:2px 6px;">+ A</button>
+    <button id="btn-output-b" title="open output B — renders surfaces routed to 'B' or 'all'" style="font-size:10px; padding:2px 6px;">+ B</button>
+    <button id="btn-output-c" title="open output C — renders surfaces routed to 'C' or 'all'" style="font-size:10px; padding:2px 6px;">+ C</button>
     <select id="output-res" title="output canvas backing-buffer size (fixed sizes decouple from window — needed for projector / Chromecast / OBS NDI)">
       <option value="fit">⌗ fit window</option>
       <option value="1920x1080">⌗ 1080p</option>
@@ -79,6 +82,14 @@
     <label>opacity <input id="prop-opacity" type="range" min="0" max="1" step="0.01" value="1" /></label>
     <label>z-order <input id="prop-z" type="number" step="1" value="0" /></label>
     <label><input id="prop-visible" type="checkbox" checked /> visible</label>
+    <label title="route this surface to a specific output tab (open output.html#A/#B/#C). 'all' = render on every output tab.">output
+      <select id="prop-output">
+        <option value="all">all outputs</option>
+        <option value="A">output A</option>
+        <option value="B">output B</option>
+        <option value="C">output C</option>
+      </select>
+    </label>
     <div class="row">
       <button id="btn-reset-warp">reset quad</button>
       <button id="btn-delete-surface" class="danger">delete surface</button>
@@ -100,6 +111,10 @@
       <input id="file-dancer-part" type="file" accept="image/*" hidden />
       <button id="btn-add-title" title="audio-reactive title text (typewriter reveal)">+ title</button>
     </div>
+    <div class="row">
+      <button id="btn-add-post-fx" title="post-effect: applies a glitch/datamosh shader to layers below in the stack">+ post-fx</button>
+      <select id="post-fx-effect" title="glitch / datamosh lookalike post-effects (v0.7.0)"></select>
+    </div>
   </section>
 
   <section>
@@ -119,6 +134,47 @@
       <button id="btn-cue-next">next ▶</button>
       <span id="cue-status" class="dim">idle</span>
     </div>
+  </section>
+
+  <section>
+    <h3>timeline <span class="dim">(v0.9 — beat-locked)</span></h3>
+    <div class="row">
+      <button id="tl-play"  title="play timeline">▶</button>
+      <button id="tl-pause" title="pause">‖</button>
+      <button id="tl-stop"  title="stop + seek to loop start">■</button>
+      <span id="tl-cursor" class="dim" style="font-family:monospace; font-size:11px;">bar 0.00 / 16</span>
+    </div>
+    <div class="row" style="font-size:11px; gap:6px;">
+      <label>loop <input id="tl-loop-enabled" type="checkbox" checked /></label>
+      <label>from <input id="tl-loop-start" type="number" min="0" step="1" value="0" style="width:50px;" /></label>
+      <label>to <input id="tl-loop-end" type="number" min="1" step="1" value="16" style="width:50px;" /></label>
+    </div>
+    <h4 style="margin-top:8px;">events <span class="dim">(snapshot @ bar)</span></h4>
+    <ul id="tl-event-list" style="font-size:11px;"></ul>
+    <div class="row" style="font-size:11px; gap:4px;">
+      <select id="tl-new-snap" style="flex:1; min-width:0;"></select>
+      <input id="tl-new-bar" type="number" min="0" step="0.25" value="0" style="width:60px;" />
+      <button id="tl-add-event" title="add snapshot at bar">+ at</button>
+    </div>
+    <p class="dim" style="font-size:10px; margin:4px 0 0 0;">BPM needed for playback (tap spacebar to set). 4 beats / bar. Cursor advances at the audio clock; snapshots apply as the cursor crosses them.</p>
+  </section>
+
+  <section>
+    <h3>modulators <span class="dim">(v0.8.0)</span></h3>
+    <details>
+      <summary>LFOs (5 BPM-synced slots)</summary>
+      <div id="mod-lfo-list"></div>
+    </details>
+    <h4 style="margin-top:8px;">bindings</h4>
+    <ul id="mod-binding-list"></ul>
+    <div class="row">
+      <input id="mod-new-path" type="text" placeholder='layers[2].audioIntensity' style="flex:1; min-width:0; background:#15151d; color:#ddd; border:1px solid #2a2a30; padding:3px 6px; font-family:monospace; font-size:11px;" />
+    </div>
+    <div class="row">
+      <select id="mod-new-source" style="flex:1; min-width:0;"></select>
+      <button id="mod-add-btn" title="add modulation binding">+ bind</button>
+    </div>
+    <p class="dim" style="font-size:10px; margin:4px 0 0 0;">Examples: <code>layers[0].opacity</code>, <code>layers[2].params.scale</code>, <code>surfaces[0].opacity</code></p>
   </section>
 
   <section>
@@ -177,6 +233,6 @@
 <input id="file-video"  type="file" accept="video/mp4,video/webm" hidden />
 <input id="file-image"  type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden />
 
-<script type="module" src="src/main-editor.js?v=14"></script>
+<script type="module" src="src/main-editor.js?v=25"></script>
 </body>
 </html>

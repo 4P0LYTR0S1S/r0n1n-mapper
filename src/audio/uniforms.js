@@ -2,7 +2,7 @@
 // analyser's FFT bins, plus a snapshot of per-band envelopes the shader can
 // read via simple float uniforms.
 
-import { audioReady, updateAudio } from './analyser.js';
+import { audioReady, updateAudio } from './analyser.js?v=1';
 
 export function createAudioState(regl) {
   let fftTex = null;

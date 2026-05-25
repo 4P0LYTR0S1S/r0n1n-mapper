@@ -65,6 +65,7 @@ function bakeText(text, font, fontSize) {
 export async function attachTitle(regl, layer, audioState) {
   let baked = bakeText(layer.text, layer.font, layer.fontSize);
   let lastSig = `${layer.text}|${layer.font}|${layer.fontSize}`;
+  let lastRevealMode = layer.revealMode;
 
   let textTex = regl.texture({
     data: baked.canvas,
@@ -75,7 +76,9 @@ export async function attachTitle(regl, layer, audioState) {
   const colorTex = regl.texture({ width: W, height: H, min: 'linear', mag: 'linear', wrap: 'clamp' });
   const fbo = regl.framebuffer({ color: colorTex, depth: false });
 
-  const startTime = performance.now() / 1000;
+  // Reveal clock — resets whenever text/font/size/mode change so the reveal
+  // re-plays after edits instead of jumping straight to "fully revealed".
+  let revealStart = performance.now() / 1000;
 
   const draw = regl({
     vert: `
@@ -176,7 +179,7 @@ export async function attachTitle(regl, layer, audioState) {
       u_bass: () => (audioState?.uniforms?.bass ?? 0) * (layer.audioIntensity ?? 1),
       u_high: () => (audioState?.uniforms?.high ?? 0) * (layer.audioIntensity ?? 1),
       u_beat: () => (audioState?.uniforms?.beat ?? 0) * (layer.audioIntensity ?? 1),
-      u_time: () => performance.now() / 1000 - startTime,
+      u_time: () => performance.now() / 1000 - revealStart,
     },
     count: 3,
     depth: { enable: false },
@@ -190,14 +193,20 @@ export async function attachTitle(regl, layer, audioState) {
   // Re-bake the text texture if the text/font/size params changed.
   function maybeRebake() {
     const sig = `${layer.text}|${layer.font}|${layer.fontSize}`;
-    if (sig === lastSig) return;
-    lastSig = sig;
-    baked = bakeText(layer.text, layer.font, layer.fontSize);
-    try { textTex.destroy?.(); } catch {}
-    textTex = regl.texture({
-      data: baked.canvas,
-      min: 'linear', mag: 'linear', wrap: 'clamp', flipY: true,
-    });
+    const sigChanged = sig !== lastSig;
+    const modeChanged = layer.revealMode !== lastRevealMode;
+    if (!sigChanged && !modeChanged) return;
+    if (sigChanged) {
+      lastSig = sig;
+      baked = bakeText(layer.text, layer.font, layer.fontSize);
+      try { textTex.destroy?.(); } catch {}
+      textTex = regl.texture({
+        data: baked.canvas,
+        min: 'linear', mag: 'linear', wrap: 'clamp', flipY: true,
+      });
+    }
+    lastRevealMode = layer.revealMode;
+    revealStart = performance.now() / 1000;
   }
 
   return {
@@ -206,7 +215,7 @@ export async function attachTitle(regl, layer, audioState) {
     flipY: false,
     tick() {
       maybeRebake();
-      const t = performance.now() / 1000 - startTime;
+      const t = performance.now() / 1000 - revealStart;
       const bpm = Math.max(audioState?.uniforms?.bpm ?? 0, 90);
 
       // Compute revealEnd 0..1 based on mode + BPM clock

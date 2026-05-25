@@ -7,14 +7,18 @@ import { loadProject, saveProject, autosaver, exportProjectFile, importProjectFi
 import { ingestVideoFile, attachVideo } from './layers/video-layer.js';
 import { ingestImageFile, attachImage } from './layers/image-layer.js';
 import { attachSolid } from './layers/solid-layer.js';
-import { attachWebcam, emptyWebcamLayer } from './layers/webcam-layer.js';
-import { attachShader, emptyShaderLayer } from './layers/shader-layer.js';
+import { attachWebcam, emptyWebcamLayer, listWebcams } from './layers/webcam-layer.js?v=1';
+import { attachShader, emptyShaderLayer } from './layers/shader-layer.js?v=2';
+import { attachPostShader, emptyPostShaderLayer } from './layers/post-shader-layer.js?v=2';
+import { POST_EFFECTS, POST_EFFECT_NAMES } from './layers/shader-effects-post.js?v=2';
 import { attachHydra, emptyHydraLayer } from './layers/hydra-layer.js';
 import { attachDancerImg, emptyDancerImgLayer, ingestPartImage, generateSampleBody, PART_KEYS, PART_LABELS, PART_KEYS_SIMPLE, PART_KEYS_COMPLEX } from './layers/dancer-img-layer.js?v=5';
-import { attachTitle, emptyTitleLayer } from './layers/title-layer.js?v=1';
-import { EFFECT_NAMES } from './layers/shader-effects.js?v=4';
-import { initAudio, tap as tapTempo, listAudioInputs, currentAudioDeviceId } from './audio/analyser.js';
+import { attachTitle, emptyTitleLayer } from './layers/title-layer.js?v=3';
+import { EFFECT_NAMES } from './layers/shader-effects.js?v=6';
+import { initAudio, tap as tapTempo, listAudioInputs, currentAudioDeviceId } from './audio/analyser.js?v=1';
 import { createAudioState } from './audio/uniforms.js';
+import { applyMods, emptyMod, emptyLfos, AUDIO_SOURCE_NAMES, RATE_NAMES, captureBaseValue } from './mod/dispatcher.js?v=1';
+import { createTimelineEngine, emptyEvent } from './timeline/timeline.js?v=1';
 import { emptySnapshot, captureSnapshot, applySnapshot, djMorph } from './project/snapshots.js';
 import { emptyCue, createCueEngine } from './project/cues.js';
 import { initMidi, midiInputs, setHandler, touchParam, startLearn, isLearning, cancelLearn, createDispatcher, clockBpm, clockRunning } from './input/midi.js';
@@ -57,6 +61,7 @@ const layerStackEl  = $('layer-stack');
 const propsEl       = $('surface-props');
 const propName      = $('prop-name');
 const propMode      = $('prop-mode');
+const propOutput    = $('prop-output');
 const propGridX     = $('prop-gridx');
 const propGridY     = $('prop-gridy');
 const propOpacity   = $('prop-opacity');
@@ -83,6 +88,17 @@ window.__r0n1n_audio = audioState;
 // Cue engine — uses the same snapshot lookup the UI uses.
 function findSnapshot(id) { return store.state.snapshots.find(s => s.id === id) ?? null; }
 const cueEngine = createCueEngine(store, findSnapshot, attachLayerRuntime, layerRuntimes);
+
+// v0.9 — Beat-locked timeline engine. Per-frame tick advances cursor by BPM
+// and auto-applies snapshots as their bar position is crossed. Driven by
+// audio-clock seconds (performance.now()) and the live BPM from analyser.
+const timelineEngine = createTimelineEngine({
+  getState:     () => store.state,
+  getAudioTime: () => performance.now() / 1000,
+  getBpm:       () => audioState?.uniforms?.bpm ?? 0,
+  getSnapshot:  findSnapshot,
+  applySnapshot: (snap) => applySnapshot(store, snap, attachLayerRuntime, layerRuntimes),
+});
 
 // Recorder targets the editor canvas.
 const recorder = createRecorder(canvas, { fps: 60, bitrate: 8_000_000 });
@@ -130,12 +146,19 @@ async function attachLayerRuntime(layer) {
     case 'solid':  return attachSolid(regl, layer);
     case 'webcam': return attachWebcam(regl, layer);
     case 'shader': return attachShader(regl, layer, audioState);
+    case 'post-shader': return attachPostShader(regl, layer, audioState);
     case 'hydra':  return attachHydra(regl, layer);
     case 'dancer-img': return attachDancerImg(regl, layer, audioState);
     case 'title': return attachTitle(regl, layer, audioState);
     default: throw new Error(`unknown layer type: ${layer.type}`);
   }
 }
+
+// Hoist isDragging before bootRuntimes — syncUI reads it, and if the restored
+// project has 0 layers the IIFE runs syncUI synchronously before line-200's
+// `let isDragging` is reached during top-down module evaluation.
+let isDragging = false;
+let syncPending = false;
 
 (async function bootRuntimes() {
   for (const layer of store.state.layers) {
@@ -180,8 +203,7 @@ function selectSurface(id) {
 // — every input event would otherwise tear down the very element receiving
 // the next event. While isDragging is true, syncUI() is skipped; pointerup
 // flips the flag and triggers a single catch-up sync.
-let isDragging = false;
-let syncPending = false;
+// (isDragging + syncPending hoisted to before bootRuntimes to avoid TDZ.)
 function syncUI() {
   if (isDragging) { syncPending = true; return; }
   emptyHint.style.display = store.state.surfaces.length ? 'none' : 'block';
@@ -200,6 +222,7 @@ function syncUI() {
   if (document.activeElement !== propZ)       propZ.value       = sel.z ?? 0;
   propVisible.checked = sel.visible !== false;
   propMode.value      = sel.warp.mode;
+  if (propOutput) propOutput.value = sel.outputTarget ?? 'all';
   meshControls.hidden = sel.warp.mode !== 'mesh';
   buildLutDropdown(sel);
   propLutIntensity.value = sel.grade?.intensity ?? 1.0;
@@ -237,8 +260,36 @@ function buildLayerStack(surface) {
   }
 }
 
+let _dragSrcIdx = null;
+
 function buildLayerRow(surface, layer, indexInStack) {
   const li = document.createElement('li');
+  li.draggable = true;
+  li.dataset.idx = indexInStack;
+  li.style.cursor = 'grab';
+  li.addEventListener('dragstart', (e) => {
+    _dragSrcIdx = indexInStack;
+    li.style.opacity = '0.4';
+    e.dataTransfer.effectAllowed = 'move';
+  });
+  li.addEventListener('dragend', () => { li.style.opacity = '1'; });
+  li.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    li.style.borderTop = '2px solid #0ff';
+  });
+  li.addEventListener('dragleave', () => { li.style.borderTop = ''; });
+  li.addEventListener('drop', (e) => {
+    e.preventDefault();
+    li.style.borderTop = '';
+    if (_dragSrcIdx === null || _dragSrcIdx === indexInStack) return;
+    store.update('', () => {
+      const ids = surface.layerIds;
+      const [moved] = ids.splice(_dragSrcIdx, 1);
+      ids.splice(indexInStack, 0, moved);
+    });
+    _dragSrcIdx = null;
+  });
 
   const head = document.createElement('div');
   head.className = 'lhead';
@@ -276,11 +327,17 @@ function buildLayerRow(surface, layer, indexInStack) {
 
   li.append(head, props);
 
+  if (layer.type === 'webcam') {
+    li.append(buildWebcamControls(layer));
+  }
   if (layer.type === 'video' || layer.type === 'webcam') {
     li.append(buildKeyControls(layer));
   }
   if (layer.type === 'shader') {
     li.append(buildShaderControls(layer));
+  }
+  if (layer.type === 'post-shader') {
+    li.append(buildPostShaderControls(layer));
   }
   if (layer.type === 'hydra') {
     li.append(buildHydraControls(layer));
@@ -585,7 +642,7 @@ function buildShaderControls(layer) {
     store.update('', () => {
       layer.effect = sel.value;
       // re-init params to defaults of new effect
-      import('./layers/shader-effects.js?v=4').then(m => {
+      import('./layers/shader-effects.js?v=6').then(m => {
         layer.params = structuredClone(m.EFFECTS[sel.value].defaultParams);
         // re-attach runtime
         const old = layerRuntimes.get(layer.id);
@@ -603,7 +660,7 @@ function buildShaderControls(layer) {
   wrap.append(rangeInput(layer, 'audioIntensity', 0, 3, 0.05));
 
   // params from current effect's schema
-  import('./layers/shader-effects.js?v=4').then(m => {
+  import('./layers/shader-effects.js?v=6').then(m => {
     const schema = m.EFFECTS[layer.effect]?.schema || [];
     for (const s of schema) {
       wrap.append(label(s.key));
@@ -614,6 +671,60 @@ function buildShaderControls(layer) {
       }
     }
   });
+  return wrap;
+}
+
+// v0.7.0 — post-shader panel. Same pattern as buildShaderControls but reads
+// the POST_EFFECTS registry. Post-effects operate on the surface accumulator
+// (the layer stack below them) rather than generating their own content.
+function buildPostShaderControls(layer) {
+  const wrap = document.createElement('div');
+  wrap.className = 'lkey';
+  wrap.append(label('post-fx'));
+
+  const sel = document.createElement('select');
+  for (const name of POST_EFFECT_NAMES) {
+    const opt = document.createElement('option');
+    opt.value = name; opt.textContent = name;
+    if (name === layer.effect) opt.selected = true;
+    sel.appendChild(opt);
+  }
+  sel.onchange = () => {
+    store.update('', () => {
+      layer.effect = sel.value;
+      layer.name = `fx: ${sel.value}`;
+      import('./layers/shader-effects-post.js?v=2').then(m => {
+        layer.params = structuredClone(m.POST_EFFECTS[sel.value].defaultParams);
+        const old = layerRuntimes.get(layer.id);
+        if (old) old.dispose?.();
+        layerRuntimes.set(layer.id, attachPostShader(regl, layer, audioState));
+        syncUI();
+      });
+    });
+  };
+  wrap.append(sel);
+
+  wrap.append(label('Audio Reactivity'));
+  if (layer.audioIntensity === undefined) layer.audioIntensity = 1.0;
+  wrap.append(rangeInput(layer, 'audioIntensity', 0, 3, 0.05));
+
+  import('./layers/shader-effects-post.js?v=2').then(m => {
+    const schema = m.POST_EFFECTS[layer.effect]?.schema || [];
+    for (const s of schema) {
+      wrap.append(label(s.key));
+      if (s.type === 'range') {
+        wrap.append(rangeInput(layer.params, s.key, s.min, s.max, s.step));
+      } else if (s.type === 'color') {
+        wrap.append(colorArrInput(layer.params, s.key));
+      }
+    }
+  });
+
+  const note = document.createElement('p');
+  note.className = 'dim';
+  note.style.cssText = 'grid-column: 1 / -1; font-size:10px; margin:4px 0 0 0;';
+  note.textContent = 'Post-fx processes layers BELOW it in this surface\'s stack. Stack multiple post-fx for layered glitch.';
+  wrap.append(note);
   return wrap;
 }
 
@@ -646,6 +757,71 @@ function buildHydraControls(layer) {
     timer = setTimeout(() => store.update('', () => { layer.code = ta.value; }), 300);
   };
   wrap.append(ta);
+  return wrap;
+}
+
+// Webcam device picker. Backend (listWebcams + layer.deviceId) shipped earlier;
+// this panel wires the UI: enumerate cameras → dropdown → on change, dispose
+// the current runtime and re-attach with the new deviceId. Labels populate
+// only after at least one getUserMedia() grant has succeeded for the camera
+// kind, so first-load may show generic "camera" entries until refresh.
+function buildWebcamControls(layer) {
+  const wrap = document.createElement('div');
+  wrap.className = 'lkey';
+
+  wrap.append(label('device'));
+  const sel = document.createElement('select');
+  sel.style.cssText = 'min-width:0; max-width:100%;';
+  wrap.append(sel);
+
+  const refreshBtn = document.createElement('button');
+  refreshBtn.textContent = '🔄';
+  refreshBtn.title = 'refresh device list (run after plugging in a new USB camera)';
+  refreshBtn.style.cssText = 'grid-column: 1 / -1; justify-self:start;';
+  wrap.append(refreshBtn);
+
+  const note = document.createElement('p');
+  note.className = 'dim';
+  note.style.cssText = 'grid-column: 1 / -1; font-size:10px; margin:2px 0 0 0;';
+  note.innerHTML = 'Crostini: pass USB cams through <code>ChromeOS Settings → Linux dev env → Manage USB devices</code>. Switching devices may re-prompt camera permission.';
+  wrap.append(note);
+
+  async function populate() {
+    const cams = await listWebcams();
+    sel.innerHTML = '';
+    const defaultOpt = document.createElement('option');
+    defaultOpt.value = '';
+    defaultOpt.textContent = '— default —';
+    sel.appendChild(defaultOpt);
+    for (const cam of cams) {
+      const opt = document.createElement('option');
+      opt.value = cam.deviceId;
+      opt.textContent = cam.label || `camera ${cam.deviceId.slice(0, 6)}`;
+      if (cam.deviceId === layer.deviceId) opt.selected = true;
+      sel.appendChild(opt);
+    }
+    if (!layer.deviceId) defaultOpt.selected = true;
+  }
+  populate();
+  refreshBtn.onclick = (e) => { e.preventDefault(); populate(); };
+
+  sel.onchange = async () => {
+    const newId = sel.value || null;
+    if (newId === layer.deviceId) return;
+    store.update('', () => { layer.deviceId = newId; });
+    const oldRt = layerRuntimes.get(layer.id);
+    if (oldRt) { try { oldRt.dispose?.(); } catch {} layerRuntimes.delete(layer.id); }
+    try {
+      const newRt = await attachWebcam(regl, layer);
+      layerRuntimes.set(layer.id, newRt);
+      layer.name = `webcam ${newRt.video.videoWidth}×${newRt.video.videoHeight}`;
+      store.update('', () => {});  // trigger UI refresh of layer name
+    } catch (e) {
+      console.error('[editor] webcam re-attach failed', e);
+      alert(`webcam re-attach failed: ${e.message}\n\n(If this is a USB cam on Crostini, check ChromeOS USB passthrough.)`);
+    }
+  };
+
   return wrap;
 }
 
@@ -787,6 +963,7 @@ propOpacity.oninput  = () => {
 propZ.oninput        = () => store.update('', () => { const s = selectedSurface(); if (s) s.z = +propZ.value; });
 propVisible.onchange = () => store.update('', () => { const s = selectedSurface(); if (s) s.visible = propVisible.checked; });
 propMode.onchange    = () => store.update('', () => { const s = selectedSurface(); if (s) s.warp.mode = propMode.value; });
+if (propOutput) propOutput.onchange = () => store.update('', () => { const s = selectedSurface(); if (s) s.outputTarget = propOutput.value; });
 propGridX.oninput    = () => store.update('', () => { const s = selectedSurface(); if (s) resizeMesh(s, +propGridX.value, s.warp.mesh.gridY); });
 propGridY.oninput    = () => store.update('', () => { const s = selectedSurface(); if (s) resizeMesh(s, s.warp.mesh.gridX, +propGridY.value); });
 btnResetWarp.onclick = () => store.update('', () => { const s = selectedSurface(); if (s) resetCorners(s); });
@@ -913,6 +1090,16 @@ function addShaderLayer(effect = 'fbm') {
   addLayerToSelectedOrNewSurface(layer);
 }
 
+function addPostShaderLayer(effect = 'rgb-shift') {
+  const layerId = 'layer_' + crypto.randomUUID().slice(0, 8);
+  const layer = emptyPostShaderLayer(layerId, effect);
+  let rt;
+  try { rt = attachPostShader(regl, layer, audioState); }
+  catch (e) { console.error('[editor] post-shader attach', e); alert(`post-fx attach failed: ${e.message}`); return; }
+  layerRuntimes.set(layer.id, rt);
+  addLayerToSelectedOrNewSurface(layer);
+}
+
 async function addHydraLayer() {
   const layerId = 'layer_' + crypto.randomUUID().slice(0, 8);
   const layer = emptyHydraLayer(layerId);
@@ -968,6 +1155,298 @@ const selShader    = document.getElementById('shader-effect');
 const btnAudio     = document.getElementById('btn-enable-audio');
 if (btnAddWebcam) btnAddWebcam.onclick = () => addWebcamLayer();
 if (btnAddShader) btnAddShader.onclick = () => addShaderLayer(selShader?.value || 'fbm');
+const btnAddPostFx = document.getElementById('btn-add-post-fx');
+const selPostFx    = document.getElementById('post-fx-effect');
+if (selPostFx) {
+  for (const name of POST_EFFECT_NAMES) {
+    const opt = document.createElement('option');
+    opt.value = name; opt.textContent = name;
+    selPostFx.appendChild(opt);
+  }
+}
+if (btnAddPostFx) btnAddPostFx.onclick = () => addPostShaderLayer(selPostFx?.value || 'rgb-shift');
+
+// ============================================================================
+// v0.8.0 — Mod Matrix Lite UI
+// ============================================================================
+// Populates the modulators panel: LFO configurators + bindings list + add-form.
+// Sources dropdown combines 5 LFOs + the audio sources from dispatcher.js.
+const modBindingList = document.getElementById('mod-binding-list');
+const modLfoList     = document.getElementById('mod-lfo-list');
+const modNewPath     = document.getElementById('mod-new-path');
+const modNewSource   = document.getElementById('mod-new-source');
+const modAddBtn      = document.getElementById('mod-add-btn');
+
+function populateModSources() {
+  if (!modNewSource) return;
+  modNewSource.innerHTML = '';
+  // LFO group
+  for (let i = 0; i < (store.state.lfos?.length ?? 0); i++) {
+    const o = document.createElement('option');
+    o.value = `lfo:${i}`;
+    const lfo = store.state.lfos[i];
+    o.textContent = `LFO ${i} — ${lfo.wave} @ ${lfo.rate}`;
+    modNewSource.appendChild(o);
+  }
+  // Audio group
+  for (const src of AUDIO_SOURCE_NAMES) {
+    const o = document.createElement('option');
+    o.value = src;
+    o.textContent = src;
+    modNewSource.appendChild(o);
+  }
+}
+
+function buildLfoList() {
+  if (!modLfoList) return;
+  modLfoList.innerHTML = '';
+  const lfos = store.state.lfos ?? [];
+  for (let i = 0; i < lfos.length; i++) {
+    const lfo = lfos[i];
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex; gap:4px; align-items:center; padding:2px 0; font-size:11px;';
+    const lbl = document.createElement('span');
+    lbl.textContent = `${i}:`;
+    lbl.style.cssText = 'opacity:0.6; min-width:14px;';
+    row.appendChild(lbl);
+    // Wave selector
+    const waveSel = document.createElement('select');
+    for (const w of ['sin','tri','saw','sqr','sh']) {
+      const o = document.createElement('option');
+      o.value = w; o.textContent = w;
+      if (w === lfo.wave) o.selected = true;
+      waveSel.appendChild(o);
+    }
+    waveSel.onchange = () => store.update('', () => { lfo.wave = waveSel.value; populateModSources(); });
+    row.appendChild(waveSel);
+    // Rate selector
+    const rateSel = document.createElement('select');
+    for (const r of RATE_NAMES) {
+      const o = document.createElement('option');
+      o.value = r; o.textContent = r;
+      if (r === lfo.rate) o.selected = true;
+      rateSel.appendChild(o);
+    }
+    rateSel.onchange = () => store.update('', () => { lfo.rate = rateSel.value; populateModSources(); });
+    row.appendChild(rateSel);
+    // Phase
+    const ph = document.createElement('input');
+    ph.type = 'range'; ph.min = 0; ph.max = 1; ph.step = 0.01;
+    ph.value = lfo.phaseOffset ?? 0;
+    ph.style.cssText = 'flex:1; min-width:60px;';
+    ph.oninput = () => store.update('', () => { lfo.phaseOffset = parseFloat(ph.value); });
+    row.appendChild(ph);
+    modLfoList.appendChild(row);
+  }
+}
+
+function buildModBindingList() {
+  if (!modBindingList) return;
+  modBindingList.innerHTML = '';
+  const mods = store.state.mods ?? [];
+  if (!mods.length) {
+    const empty = document.createElement('li');
+    empty.className = 'dim';
+    empty.style.cssText = 'font-size:10px; padding:4px;';
+    empty.textContent = 'no bindings — add one below.';
+    modBindingList.appendChild(empty);
+    return;
+  }
+  for (const m of mods) {
+    const li = document.createElement('li');
+    li.style.cssText = 'display:flex; flex-direction:column; gap:2px; padding:4px; border:1px solid #2a2a30; margin-bottom:4px; font-size:11px;';
+    // Top row: enabled toggle + path + delete
+    const topRow = document.createElement('div');
+    topRow.style.cssText = 'display:flex; gap:4px; align-items:center;';
+    const en = document.createElement('input');
+    en.type = 'checkbox';
+    en.checked = m.enabled !== false;
+    en.onchange = () => store.update('', () => { m.enabled = en.checked; });
+    en.title = 'enable / disable this binding';
+    topRow.appendChild(en);
+    const path = document.createElement('code');
+    path.textContent = m.paramPath;
+    path.style.cssText = 'flex:1; font-size:10px; color:#9cf; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;';
+    path.title = m.paramPath;
+    topRow.appendChild(path);
+    const del = document.createElement('button');
+    del.textContent = '×';
+    del.title = 'remove binding';
+    del.style.cssText = 'padding:0 6px;';
+    del.onclick = () => store.update('', (st) => { st.mods = st.mods.filter(x => x.id !== m.id); });
+    topRow.appendChild(del);
+    li.appendChild(topRow);
+    // Bottom row: source + depth + polarity
+    const bot = document.createElement('div');
+    bot.style.cssText = 'display:flex; gap:4px; align-items:center; font-size:10px;';
+    const srcSel = document.createElement('select');
+    for (let i = 0; i < (store.state.lfos?.length ?? 0); i++) {
+      const o = document.createElement('option');
+      o.value = `lfo:${i}`;
+      o.textContent = `LFO ${i}`;
+      if (m.source === o.value) o.selected = true;
+      srcSel.appendChild(o);
+    }
+    for (const a of AUDIO_SOURCE_NAMES) {
+      const o = document.createElement('option');
+      o.value = a;
+      o.textContent = a.replace('audio:', '');
+      if (m.source === o.value) o.selected = true;
+      srcSel.appendChild(o);
+    }
+    srcSel.onchange = () => store.update('', () => { m.source = srcSel.value; });
+    bot.appendChild(srcSel);
+    const depth = document.createElement('input');
+    depth.type = 'range'; depth.min = -2; depth.max = 2; depth.step = 0.01;
+    depth.value = m.depth ?? 0.5;
+    depth.title = `depth ${m.depth?.toFixed(2)}`;
+    depth.style.cssText = 'flex:1; min-width:50px;';
+    depth.oninput = () => store.update('', () => { m.depth = parseFloat(depth.value); depth.title = `depth ${m.depth.toFixed(2)}`; });
+    bot.appendChild(depth);
+    const polSel = document.createElement('select');
+    for (const p of ['uni','bi']) {
+      const o = document.createElement('option');
+      o.value = p; o.textContent = p;
+      if (m.polarity === p) o.selected = true;
+      polSel.appendChild(o);
+    }
+    polSel.title = 'polarity: uni = 0..depth, bi = -depth..depth';
+    polSel.onchange = () => store.update('', () => { m.polarity = polSel.value; });
+    bot.appendChild(polSel);
+    li.appendChild(bot);
+    modBindingList.appendChild(li);
+  }
+}
+
+if (modAddBtn) {
+  modAddBtn.onclick = () => {
+    const path = modNewPath?.value?.trim();
+    if (!path) { alert('enter a param path like layers[0].opacity'); return; }
+    const src = modNewSource?.value;
+    if (!src) { alert('pick a modulation source'); return; }
+    // Capture current base value at bind time so modulation is additive
+    // on top of whatever the operator left the slider at.
+    const base = captureBaseValue(store.state, path);
+    const id = 'mod_' + crypto.randomUUID().slice(0, 8);
+    store.update('', (st) => {
+      const m = emptyMod(id, path, src);
+      m.baseValue = base;
+      st.mods = [...(st.mods ?? []), m];
+    });
+    if (modNewPath) modNewPath.value = '';
+  };
+}
+
+// Build mod panel on load + every state change
+populateModSources();
+buildLfoList();
+buildModBindingList();
+store.subscribe(() => { buildLfoList(); buildModBindingList(); });
+
+// ============================================================================
+// v0.9 — Timeline UI
+// ============================================================================
+const tlPlay        = document.getElementById('tl-play');
+const tlPause       = document.getElementById('tl-pause');
+const tlStop        = document.getElementById('tl-stop');
+const tlCursor      = document.getElementById('tl-cursor');
+const tlLoopEnabled = document.getElementById('tl-loop-enabled');
+const tlLoopStart   = document.getElementById('tl-loop-start');
+const tlLoopEnd     = document.getElementById('tl-loop-end');
+const tlEventList   = document.getElementById('tl-event-list');
+const tlNewSnap     = document.getElementById('tl-new-snap');
+const tlNewBar      = document.getElementById('tl-new-bar');
+const tlAddEvent    = document.getElementById('tl-add-event');
+
+if (tlPlay)  tlPlay.onclick  = () => { timelineEngine.play();  store.update('', () => {}); };
+if (tlPause) tlPause.onclick = () => { timelineEngine.pause(); store.update('', () => {}); };
+if (tlStop)  tlStop.onclick  = () => { timelineEngine.stop();  store.update('', () => {}); };
+
+if (tlLoopEnabled) tlLoopEnabled.onchange = () => store.update('', () => { store.state.timeline.loopEnabled = tlLoopEnabled.checked; });
+if (tlLoopStart)   tlLoopStart.onchange   = () => store.update('', () => { store.state.timeline.loopStart = parseFloat(tlLoopStart.value); });
+if (tlLoopEnd)     tlLoopEnd.onchange     = () => store.update('', () => { store.state.timeline.loopEnd   = parseFloat(tlLoopEnd.value); });
+
+function populateTimelineSnaps() {
+  if (!tlNewSnap) return;
+  tlNewSnap.innerHTML = '';
+  for (const s of store.state.snapshots ?? []) {
+    const o = document.createElement('option');
+    o.value = s.id;
+    o.textContent = s.name ?? s.id.slice(0, 8);
+    tlNewSnap.appendChild(o);
+  }
+  if (!store.state.snapshots?.length) {
+    const o = document.createElement('option');
+    o.value = '';
+    o.textContent = '— no snapshots —';
+    tlNewSnap.appendChild(o);
+  }
+}
+
+function buildTimelineEventList() {
+  if (!tlEventList) return;
+  tlEventList.innerHTML = '';
+  const events = (store.state.timeline?.events ?? []).slice().sort((a, b) => a.bar - b.bar);
+  if (!events.length) {
+    const empty = document.createElement('li');
+    empty.className = 'dim';
+    empty.style.cssText = 'font-size:10px; padding:4px;';
+    empty.textContent = 'no events — add snapshots below.';
+    tlEventList.appendChild(empty);
+    return;
+  }
+  for (const ev of events) {
+    const li = document.createElement('li');
+    li.style.cssText = 'display:flex; gap:6px; align-items:center; padding:2px 4px; border:1px solid #2a2a30; margin-bottom:2px;';
+    const snap = findSnapshot(ev.snapshotId);
+    const lbl = document.createElement('span');
+    lbl.textContent = `bar ${ev.bar.toFixed(2)} → ${snap?.name ?? ev.snapshotId.slice(0, 8)}`;
+    lbl.style.cssText = 'flex:1; font-size:11px;';
+    li.appendChild(lbl);
+    const del = document.createElement('button');
+    del.textContent = '×';
+    del.title = 'remove event';
+    del.style.cssText = 'padding:0 6px;';
+    del.onclick = () => store.update('', (st) => {
+      st.timeline.events = st.timeline.events.filter(x => x.id !== ev.id);
+    });
+    li.appendChild(del);
+    tlEventList.appendChild(li);
+  }
+}
+
+if (tlAddEvent) {
+  tlAddEvent.onclick = () => {
+    const snapId = tlNewSnap?.value;
+    if (!snapId) { alert('save a snapshot first (Shift+1..9 or snapshot bar)'); return; }
+    const bar = parseFloat(tlNewBar?.value ?? '0');
+    if (!Number.isFinite(bar) || bar < 0) { alert('bar must be a non-negative number'); return; }
+    const id = 'tlev_' + crypto.randomUUID().slice(0, 8);
+    store.update('', (st) => {
+      if (!st.timeline) st.timeline = { events: [], playing: false, currentBar: 0, anchorAudioTime: 0, anchorBar: 0, loopStart: 0, loopEnd: 16, loopEnabled: true };
+      st.timeline.events = [...(st.timeline.events ?? []), emptyEvent(id, snapId, bar)];
+    });
+  };
+}
+
+function syncTimelineUI() {
+  if (!store.state.timeline) return;
+  const tl = store.state.timeline;
+  if (tlCursor) {
+    const loopEnd = tl.loopEnd ?? 16;
+    tlCursor.textContent = `bar ${(tl.currentBar ?? 0).toFixed(2)} / ${loopEnd}${tl.playing ? ' ▶' : ''}`;
+  }
+  if (tlLoopEnabled && document.activeElement !== tlLoopEnabled) tlLoopEnabled.checked = tl.loopEnabled !== false;
+  if (tlLoopStart   && document.activeElement !== tlLoopStart)   tlLoopStart.value   = tl.loopStart ?? 0;
+  if (tlLoopEnd     && document.activeElement !== tlLoopEnd)     tlLoopEnd.value     = tl.loopEnd ?? 16;
+}
+
+populateTimelineSnaps();
+buildTimelineEventList();
+syncTimelineUI();
+store.subscribe(() => { populateTimelineSnaps(); buildTimelineEventList(); syncTimelineUI(); });
+// Cursor display ticks every frame even when nothing else changes
+setInterval(syncTimelineUI, 100);
 if (btnAddHydra)  btnAddHydra.onclick  = () => addHydraLayer();
 const btnAddDancerImg = document.getElementById('btn-add-dancer-img');
 if (btnAddDancerImg) btnAddDancerImg.onclick = () => addDancerImgLayer();
@@ -1399,6 +1878,14 @@ importFile.onchange = async () => {
 };
 
 btnOutput.onclick = () => window.open('output.html', '_blank');
+// v0.7.x — A/B/C output buttons. Each opens output.html with a hash that the
+// output tab parses into MY_OUTPUT_ID to filter which surfaces it renders.
+const btnOutputA = $('btn-output-a');
+const btnOutputB = $('btn-output-b');
+const btnOutputC = $('btn-output-c');
+if (btnOutputA) btnOutputA.onclick = () => window.open('output.html#A', '_blank');
+if (btnOutputB) btnOutputB.onclick = () => window.open('output.html#B', '_blank');
+if (btnOutputC) btnOutputC.onclick = () => window.open('output.html#C', '_blank');
 
 // Manual push — force full state to output tab. Use when auto-sync stalls.
 const btnPush = $('btn-push');
@@ -1482,6 +1969,16 @@ function frame() {
 
   audioState.tick(t);
   cueEngine.tick();
+
+  // v0.8.0 — Modulation matrix. Walks state.mods bindings, evaluates each
+  // source (LFO or audio band), writes modulated value into the bound param.
+  // Direct mutation: bypasses store subscribers (store doesn't proxy nested
+  // mutations), so no broadcast/autosave storm per frame.
+  applyMods(store.state, { ...audioState.uniforms, time: t });
+
+  // v0.9 — Beat-locked timeline. Advances cursor by BPM-derived bar position,
+  // applies snapshots as the cursor crosses event bars, wraps at loop end.
+  timelineEngine.tick();
 
   // DJ mode morph: per-frame in-place blend of snapshot A vs B by djMode.value.
   // Skips structuredClone for live performance — see snapshots.js:djMorph.

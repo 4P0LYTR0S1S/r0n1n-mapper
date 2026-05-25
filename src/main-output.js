@@ -6,12 +6,14 @@ import { attachVideo } from './layers/video-layer.js';
 import { attachImage } from './layers/image-layer.js';
 import { attachSolid } from './layers/solid-layer.js';
 import { attachWebcam } from './layers/webcam-layer.js';
-import { attachShader } from './layers/shader-layer.js';
+import { attachShader } from './layers/shader-layer.js?v=2';
+import { attachPostShader } from './layers/post-shader-layer.js?v=2';
 import { attachHydra } from './layers/hydra-layer.js';
 import { attachDancerImg } from './layers/dancer-img-layer.js?v=5';
-import { attachTitle } from './layers/title-layer.js?v=1';
+import { attachTitle } from './layers/title-layer.js?v=3';
 import { createAudioState } from './audio/uniforms.js';
-import { initAudio, getAudioStream } from './audio/analyser.js';
+import { initAudio, getAudioStream } from './audio/analyser.js?v=1';
+import { applyMods } from './mod/dispatcher.js?v=1';
 import { createPipeline } from './render/pipeline.js';
 import { parseCube, uploadLutTexture } from './grade/lut.js';
 import { getLut as idbGetLut, listLuts } from './storage/idb.js';
@@ -20,8 +22,19 @@ const canvas = document.getElementById('view');
 const fpsEl  = document.getElementById('fps');
 const syncEl = document.getElementById('sync-state');
 
+// v0.7.x — output ID from URL hash. Single-output flow (no hash) renders
+// ALL surfaces regardless of their outputTarget, so existing projects don't
+// break. Triple-output rigs open output.html#A / #B / #C; each tab then
+// renders only surfaces whose outputTarget matches its ID or is 'all'.
+const MY_OUTPUT_ID = (location.hash || '#').slice(1).toUpperCase() || 'all';
+document.title = MY_OUTPUT_ID === 'all'
+  ? 'Ronin Projection Mapper — output'
+  : `Ronin Projection Mapper — output ${MY_OUTPUT_ID}`;
+console.log('[output] my output id:', MY_OUTPUT_ID);
+
 const regl = initRegl(canvas);
 const audioState = createAudioState(regl);
+window.__r0n1n_audio = audioState;
 const lutManager = new Map();
 const getLutEntry = (id) => lutManager.get(id);
 (async () => {
@@ -50,6 +63,7 @@ async function attachLayerRuntime(layer) {
     case 'solid':  return attachSolid(regl, layer);
     case 'webcam': return attachWebcam(regl, layer);
     case 'shader': return attachShader(regl, layer, audioState);
+    case 'post-shader': return attachPostShader(regl, layer, audioState);
     case 'hydra':  return attachHydra(regl, layer);
     case 'dancer-img': return attachDancerImg(regl, layer, audioState);
     case 'title': return attachTitle(regl, layer, audioState);
@@ -180,11 +194,27 @@ function frame() {
   regl.poll();
 
   audioState.tick(t);
-  pipeline.render(state, layerRuntimes, { getLut: getLutEntry });
+  // v0.8.0 — Run modulation dispatcher BEFORE rendering. Mods read from state
+  // (which arrives via BroadcastChannel from editor), evaluate sources against
+  // local audioState, and mutate layer.params in-place. Per-tab evaluation so
+  // each output tab gets its own framerate-locked modulation.
+  applyMods(state, { ...audioState.uniforms, time: t });
+  // Filter surfaces by outputTarget so this tab only renders what's routed
+  // to it. Layers themselves stay shared (all output instances attach the
+  // same layer runtimes — they're effectively a global render-resource pool).
+  const filteredState = MY_OUTPUT_ID === 'all'
+    ? state
+    : { ...state, surfaces: state.surfaces.filter(s => {
+        const t = s.outputTarget ?? 'all';
+        return t === 'all' || t === MY_OUTPUT_ID;
+      }) };
+  pipeline.render(filteredState, layerRuntimes, { getLut: getLutEntry });
 
   const alive = performance.now() - lastEditor < 1500;
   fpsEl.textContent = `fps ${fps.toFixed(0)}`;
   syncEl.textContent = alive ? 'sync ✓' : 'sync —';
+  const idEl = document.getElementById('output-id');
+  if (idEl) idEl.textContent = MY_OUTPUT_ID === 'all' ? 'all' : `→ ${MY_OUTPUT_ID}`;
   if (!alive) document.body.classList.remove('live');
 
   requestAnimationFrame(frame);

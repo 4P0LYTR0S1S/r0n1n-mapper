@@ -6,6 +6,16 @@ Browser-native projection mapping. Custom MP4 / WebM uploads, real-time chroma +
 
 Built because **map.club**'s Canvas-2D architecture has a hard performance ceiling and can't custom-key VJ clips, and **MadMapper / Resolume / HeavyM** don't run on ChromeOS or arm64 Chromebooks.
 
+### What's new since v0.5.0
+
+- **VJ-grade audio pipeline** (v0.6.0) — 5-band split (sub/kick/lowMid/highMid/air), asymmetric attack/release envelope, spectral-flux onset detection, drop detector, BPM-locked phrase clock. Existing layers feel snappier on day one. Full uniform inventory in `CHANGELOG.md`.
+- **Webcam device picker** (v0.6.0) — select any plugged camera per webcam layer. Unlocks the `vdo.ninja → OBS Virtual Camera → r0n1n-mapper` pipe out of the box (see `docs/VDO_NINJA_WORKFLOW.md`).
+- **Cheap-wow shader pack** (v0.6.1) — `feedback-trails`, `shockwave`, `truchet`, `voronoi` generator effects. New ping-pong FBO architecture in `shader-layer.js` lets any future effect opt into `u_prev` (previous-frame texture) via `meta.feedback: true`.
+- **Datamosh-lookalike post-effect stack** (v0.7.0) — NEW layer type `post-shader` operates on the surface accumulator (everything below in z-order). Six glitch shaders: `rgb-shift`, `scanline-tear`, `block-displace`, `ascii`, `pixel-sort`, `mv-smear`. Stack multiple for layered glitch.
+- **Triple-output A/B/C surface routing** (v0.7.1) — per-surface `outputTarget` field, three new output tabs (`output.html#A` etc.) for multi-projector rigs. Single-tab flow unchanged. Free mirror-mode + per-output recording. Hardware caveat: ARM iGPU will thermal-throttle at 3× 1080p; 720p × 3 sustained.
+- **Mod Matrix Lite** (v0.8.0) — bind any continuous parameter to one of 5 BPM-synced LFOs or 16 audio sources. Per-frame dispatcher writes `base + (source × depth)` into the bound param. Operator-drag-while-modulating detection so dragging a bound slider re-anchors the base.
+- **Beat-Locked Timeline Lite** (v0.9.0, MARQUEE) — schedule snapshots by bar position. Playback follows the BPM clock; snapshots auto-apply as the cursor crosses their bar. Phrase-aligned loop region (4/8/16/32 bar). Music-first VJ workflow foundation.
+
 ---
 
 ## Installation
@@ -122,7 +132,28 @@ Key technical decisions that fell out of the research:
 | AGPL | ✓ | – | – | – | – |
 | Runs without install | ✓ | ✓ | – | – | – |
 
-## Roadmap (post-v0.1.0)
+## Roadmap (post-v0.9.0)
+
+Next visible-payoff slice — each item under 1 week build:
+
+- **Mod Matrix Full** (v0.8.x) — per-slider "M" button for in-place binding,
+  right-click quick menu, mod stacking, modulation curves, output range remap.
+  Currently Lite ships sidebar-panel binding by JSON-pointer path.
+- **Timeline visual lane** (v0.9.x) — SVG horizontal lane with event markers,
+  draggable cursor, drag-to-place events, snap-to-grid quantization. Lite
+  currently ships a text-list scheduling UI.
+- **Native vdo.ninja viewer** (v1.x) — direct WebRTC peer integration to
+  eliminate the OBS Virtual Cam hop. Deferred pending operator's tolerance
+  of the current OBS pipe (see `docs/VDO_NINJA_WORKFLOW.md`).
+- **WebCodecs true datamoshing** (v0.8+) — bitstream-surgery P-frame
+  propagation. Deferred per v0.7.0 swarm verdict (3-week build with
+  high tail risk under seek/loop; shader lookalike pack delivers 80%
+  of perceptual look).
+- **Multicam container layer** — closed as covered by existing primitives
+  (multiple webcam layers + snapshot/cue + visibility toggle + MIDI).
+  Revisit only if live-set UX proves awkward.
+
+Longer-horizon (v1.0+):
 
 - **ML matting** — RVM via ONNX Runtime Web + WebGPU. Replaces classical
   keying for messy footage. Spike C validated the model loads; full UI gating

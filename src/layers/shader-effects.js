@@ -1,14 +1,36 @@
-// Six starter shader effects. Each is a fullscreen fragment shader producing
-// color from time + audio uniforms + per-effect params.
+// Shader effects registry. Each is a fullscreen fragment shader producing
+// color from time + audio uniforms + per-effect params. Effects flagged
+// `feedback: true` opt into the ping-pong FBO path in shader-layer.js and
+// receive `u_prev` (the previous frame's color as a sampler2D).
 //
-// Uniform contract (all effects):
-//   u_time      float        seconds since session start
-//   u_res       vec2         render resolution
-//   u_bass      float        [0..1]
-//   u_mid       float        [0..1]
-//   u_high     float        [0..1]
-//   u_env      float        [0..1] (full-spectrum envelope)
-//   u_beat     float        0 or 1 (one-frame pulse on onset)
+// Uniform contract (all effects, supplied by shader-layer.js):
+//   Time / resolution
+//     u_time      float        seconds since session start
+//     u_res       vec2         render resolution
+//   Legacy 3-band (backward-compat with pre-v0.6.0 shaders)
+//     u_bass      float        [0..1]
+//     u_mid       float        [0..1]
+//     u_high      float        [0..1]
+//     u_env       float        [0..1] (full-spectrum envelope)
+//     u_beat      float        0 or 1 (one-frame pulse on bass-spike beat)
+//     u_bpm       float        live BPM (MIDI clock or tap-tempo)
+//   v0.6.0 — 5-band split (musically-tuned)
+//     u_sub       float        [0..1] 20-60 Hz, weight
+//     u_kick      float        [0..1] 60-120 Hz, the thump
+//     u_lowMid    float        [0..1] 120-500 Hz, bass body
+//     u_highMid   float        [0..1] 2-4 kHz, snare/clap/vocal presence
+//     u_air       float        [0..1] 8-16 kHz, hi-hat/cymbal sparkle
+//   v0.6.0 — peak hold (slow decay)
+//     u_peakKick  float        [0..1]
+//     u_peakAir   float        [0..1]
+//   v0.6.0 — onset / phrase / drop
+//     u_onset     float        0 or 1 (cleaner than u_beat — fires on any transient)
+//     u_beatMod4  float        [0..4) continuous, floor() = beat-in-bar
+//     u_barMod16  float        [0..16) continuous, floor() = bar-in-phrase
+//     u_phrasePos float        [0..1] ramp inside an 8-bar phrase
+//     u_dropFlag  float        0 or 1 (held for 800ms after a detected drop)
+//   Feedback effects only:
+//     u_prev      sampler2D    previous frame's color attachment (for trails / smear / shockwave)
 //
 // Effect-specific params come from layer.params and are documented per-effect.
 
@@ -17,12 +39,28 @@ const COMMON = `
   varying vec2 v_uv;
   uniform float u_time;
   uniform vec2  u_res;
+  // Legacy 3-band
   uniform float u_bass;
   uniform float u_mid;
   uniform float u_high;
   uniform float u_env;
   uniform float u_beat;
   uniform float u_bpm;
+  // v0.6.0 5-band
+  uniform float u_sub;
+  uniform float u_kick;
+  uniform float u_lowMid;
+  uniform float u_highMid;
+  uniform float u_air;
+  // v0.6.0 peak hold
+  uniform float u_peakKick;
+  uniform float u_peakAir;
+  // v0.6.0 onset / phrase / drop
+  uniform float u_onset;
+  uniform float u_beatMod4;
+  uniform float u_barMod16;
+  uniform float u_phrasePos;
+  uniform float u_dropFlag;
 `;
 
 const VERT = `
@@ -38,6 +76,7 @@ const VERT = `
 const NOISE = `
   // 2D hash + value noise + FBM. iq-style.
   float hash21(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+  vec2  hash22(vec2 p) { return vec2(hash21(p), hash21(p + 17.0)); }
   float noise(vec2 p) {
     vec2 i = floor(p), f = fract(p);
     float a = hash21(i);
@@ -312,7 +351,183 @@ const DANCER_FRAG = `
   }
 `;
 
-// Effect registry. Each entry: { frag, vert?, defaultParams, paramSchema }
+// ============================================================================
+// v0.6.1 — Cheap-wow shader pack
+// ============================================================================
+
+// Feedback Trails — frame retention with fade decay. Each frame the previous
+// frame is sampled at a slight zoom + rotation + fade, then a new pattern is
+// drawn on top driven by audio bands. Builds standing wave patterns + droste
+// tunnels automatically. Foundation effect for v0.6.1: every other feedback
+// shader leans on this same ping-pong infrastructure.
+const FEEDBACK_TRAILS_FRAG = `${COMMON}${NOISE}
+  uniform sampler2D u_prev;
+  uniform float u_decay;     // 0..1, how strong the previous frame persists (default 0.93)
+  uniform float u_zoom;      // -0.2..0.2, per-frame zoom-in/out (default 0.005)
+  uniform float u_rotate;    // -1..1 radians/sec rotation rate (default 0.1)
+  uniform vec3  u_tint;
+  uniform vec3  u_bgTint;
+  void main() {
+    // Sample previous frame with a slight zoom + rotation toward center.
+    // The decay anchors how long trails persist; bass momentarily pushes
+    // decay toward 1.0 (frozen frame) so kicks "freeze the moment."
+    vec2 c = v_uv - 0.5;
+    float r = u_rotate * 0.016 + u_kick * 0.04;  // rotation per frame, kick adds spin
+    float z = u_zoom + u_lowMid * 0.012;          // mid-band swells the zoom
+    float ca = cos(r), sa = sin(r);
+    vec2 p = vec2(ca * c.x - sa * c.y, sa * c.x + ca * c.y) * (1.0 - z) + 0.5;
+    vec4 prev = texture2D(u_prev, p);
+
+    // Effective decay — bumped on bass for momentary frame-freeze
+    float decay = clamp(u_decay + u_kick * 0.07 + u_dropFlag * 0.06, 0.0, 0.999);
+    vec3 retained = prev.rgb * decay;
+
+    // New paint — fbm flowing field tinted by u_tint, energized by env
+    vec2 q = (v_uv - 0.5) * 4.0 + vec2(u_time * 0.15);
+    float v = fbm(q + vec2(fbm(q + u_time * 0.4), fbm(q - u_time * 0.3)));
+    vec3 fresh = mix(u_bgTint, u_tint, v + u_env * 0.6) * (0.15 + u_env * 0.5);
+
+    // Strobe-on-snare: u_onset jolt fully overrides retained frame for 1 frame.
+    fresh += u_onset * u_air * 0.4;
+
+    gl_FragColor = vec4(retained + fresh, 1.0);
+  }
+`;
+
+// Shockwave — concentric rings radiating from center on every onset. Each
+// ring is tracked as a (radius, age) pair encoded into the previous frame's
+// alpha channel; on onset we inject a fresh ring. Reads as direct
+// cause-and-effect with the music (the most legible beat-sync effect).
+const SHOCKWAVE_FRAG = `${COMMON}
+  uniform sampler2D u_prev;
+  uniform vec3  u_ringColor;
+  uniform vec3  u_bgColor;
+  uniform float u_ringWidth;   // 0.005..0.05
+  uniform float u_speed;       // 0.1..1.0, expansion rate
+  void main() {
+    // Read previous frame — use it as background canvas that gradually fades
+    vec3 prev = texture2D(u_prev, v_uv).rgb * 0.94;
+
+    // Distance from center, aspect-corrected
+    vec2 c = (v_uv - 0.5) * vec2(u_res.x / u_res.y, 1.0);
+    float r = length(c) * 2.0;
+
+    // Phase clock drives ring 1 — expands from 0 over time, wraps at 1.5
+    float t1 = fract(u_time * u_speed);
+    float ring1 = smoothstep(u_ringWidth, 0.0, abs(r - t1)) * (1.0 - t1);
+
+    // Bar-aligned ring 2 — fires on every beat (u_beatMod4 floor change)
+    float beatPhase = fract(u_beatMod4);
+    float ring2 = smoothstep(u_ringWidth, 0.0, abs(r - beatPhase)) * (1.0 - beatPhase) * 0.6;
+
+    // Drop ring 3 — triggers on dropFlag, big and slow
+    float dropPhase = u_dropFlag * (1.0 - fract(u_time * 0.5));
+    float ring3 = smoothstep(u_ringWidth * 2.0, 0.0, abs(r - dropPhase * 1.5)) * dropPhase;
+
+    vec3 col = mix(u_bgColor, prev, 0.7);
+    col += u_ringColor * ring1 * (0.5 + u_kick * 1.5);
+    col += u_ringColor * ring2 * (0.5 + u_highMid * 1.0);
+    col += vec3(1.0, 0.3, 0.9) * ring3 * 1.5;
+
+    // Onset flash — full-screen white pop on transients, very brief
+    col += vec3(u_onset * u_highMid * 0.3);
+
+    gl_FragColor = vec4(col, 1.0);
+  }
+`;
+
+// Truchet Tiles — wall of randomly-rotated arc tiles forming continuous curves
+// and mazes. Lines pulse-glow on beat. Mathematically pristine, infinite
+// without seams, projection-map-friendly on rectangular surfaces.
+const TRUCHET_FRAG = `${COMMON}${NOISE}
+  uniform float u_density;     // tile size in screen-uv (0.05..0.3)
+  uniform vec3  u_lineColor;
+  uniform vec3  u_bgColor;
+  void main() {
+    vec2 uv = v_uv * vec2(u_res.x / u_res.y, 1.0);
+    float s = u_density;
+    vec2 cell = floor(uv / s);
+    vec2 f = fract(uv / s);
+
+    // Random rotation per cell (4 possible) — also shifts by bar mod
+    float rnd = hash21(cell + floor(u_barMod16 * 0.5));
+    if (rnd < 0.5) f = vec2(1.0 - f.x, f.y);
+
+    // Distance to two arcs forming this tile's curve
+    float r1 = length(f) - 0.5;
+    float r2 = length(f - vec2(1.0)) - 0.5;
+    float d = min(abs(r1), abs(r2));
+
+    // Line thickness pulses with kick + onset
+    float thick = 0.05 + u_kick * 0.08 + u_onset * 0.12;
+    float line = smoothstep(thick, 0.0, d);
+
+    // Color shift per bar — hue rotates through colors on each new bar
+    float barHue = floor(u_barMod16);
+    vec3 lc = u_lineColor * (0.5 + 0.5 * cos(barHue * 1.5 + vec3(0.0, 2.094, 4.188)));
+
+    vec3 col = mix(u_bgColor, lc * (0.6 + u_env * 0.8), line);
+    // Drop invert
+    col = mix(col, vec3(1.0) - col, u_dropFlag * 0.7);
+    gl_FragColor = vec4(col, 1.0);
+  }
+`;
+
+// Voronoi Shatter — plane fractures into cellular shards. Each cell jitters
+// outward on transients; iridesces with phrase position. Glass-breaking read.
+const VORONOI_FRAG = `${COMMON}${NOISE}
+  uniform float u_scale;       // 4..32 cells across
+  uniform vec3  u_colorA;
+  uniform vec3  u_colorB;
+  void main() {
+    vec2 uv = v_uv * vec2(u_res.x / u_res.y, 1.0) * u_scale;
+    vec2 cell = floor(uv);
+    vec2 f = fract(uv);
+
+    // Find nearest cell point — standard Voronoi
+    float minDist = 99.0;
+    vec2 cellOff;
+    vec2 nearest;
+    for (int y = -1; y <= 1; y++) {
+      for (int x = -1; x <= 1; x++) {
+        vec2 o = vec2(float(x), float(y));
+        vec2 site = o + hash22(cell + o);
+        // Site jitters outward on onset
+        site += (hash22(cell + o + 17.0) - 0.5) * u_onset * 0.6;
+        float d = length(site - f);
+        if (d < minDist) {
+          minDist = d;
+          cellOff = o;
+          nearest = site;
+        }
+      }
+    }
+
+    // Cell ID drives color — also phrasePos shifts the palette
+    float id = hash21(cell + cellOff + floor(u_phrasePos * 4.0));
+    vec3 col = mix(u_colorA, u_colorB, id);
+    col *= (0.4 + u_env * 0.9);
+
+    // Cell border on kick — edge brightness from distance-to-second-closest
+    float second = 99.0;
+    for (int y = -1; y <= 1; y++) {
+      for (int x = -1; x <= 1; x++) {
+        vec2 o = vec2(float(x), float(y));
+        vec2 site = o + hash22(cell + o);
+        site += (hash22(cell + o + 17.0) - 0.5) * u_onset * 0.6;
+        float d = length(site - f);
+        if (d > minDist + 0.001 && d < second) second = d;
+      }
+    }
+    float edge = smoothstep(0.06, 0.0, second - minDist);
+    col += edge * (0.3 + u_kick * 1.5);
+    gl_FragColor = vec4(col, 1.0);
+  }
+`;
+
+// Effect registry. Each entry: { frag, vert?, defaultParams, schema, feedback? }
+// `feedback: true` opts into the ping-pong FBO path in shader-layer.js, which
+// supplies the `u_prev` sampler2D uniform with the previous frame's color.
 export const EFFECTS = {
   fbm: {
     frag: FBM_FRAG, vert: VERT,
@@ -370,6 +585,65 @@ export const EFFECTS = {
       { key: 'joints', type: 'color' },
       { key: 'bg',     type: 'color' },
       { key: 'thick',  type: 'range', min: 0.002, max: 0.020, step: 0.0005 },
+    ],
+  },
+  // ---------------- v0.6.1 cheap-wow shader pack ----------------
+  'feedback-trails': {
+    frag: FEEDBACK_TRAILS_FRAG, vert: VERT, feedback: true,
+    defaultParams: {
+      decay:  0.93,
+      zoom:   0.005,
+      rotate: 0.1,
+      tint:   [0.0, 1.0, 0.85],
+      bgTint: [0.02, 0.0, 0.05],
+    },
+    schema: [
+      { key: 'decay',  type: 'range', min: 0.7, max: 0.99, step: 0.005 },
+      { key: 'zoom',   type: 'range', min: -0.05, max: 0.05, step: 0.001 },
+      { key: 'rotate', type: 'range', min: -1, max: 1, step: 0.01 },
+      { key: 'tint',   type: 'color' },
+      { key: 'bgTint', type: 'color' },
+    ],
+  },
+  shockwave: {
+    frag: SHOCKWAVE_FRAG, vert: VERT, feedback: true,
+    defaultParams: {
+      ringColor: [0.0, 1.0, 0.85],
+      bgColor:   [0.02, 0.0, 0.06],
+      ringWidth: 0.012,
+      speed:     0.4,
+    },
+    schema: [
+      { key: 'ringColor', type: 'color' },
+      { key: 'bgColor',   type: 'color' },
+      { key: 'ringWidth', type: 'range', min: 0.003, max: 0.04, step: 0.001 },
+      { key: 'speed',     type: 'range', min: 0.1, max: 1.5, step: 0.05 },
+    ],
+  },
+  truchet: {
+    frag: TRUCHET_FRAG, vert: VERT,
+    defaultParams: {
+      density:   0.1,
+      lineColor: [1.0, 0.4, 0.85],
+      bgColor:   [0.02, 0.02, 0.06],
+    },
+    schema: [
+      { key: 'density',   type: 'range', min: 0.03, max: 0.3, step: 0.005 },
+      { key: 'lineColor', type: 'color' },
+      { key: 'bgColor',   type: 'color' },
+    ],
+  },
+  voronoi: {
+    frag: VORONOI_FRAG, vert: VERT,
+    defaultParams: {
+      scale:  8,
+      colorA: [0.1, 0.2, 0.6],
+      colorB: [1.0, 0.4, 0.85],
+    },
+    schema: [
+      { key: 'scale',  type: 'range', min: 2, max: 32, step: 1 },
+      { key: 'colorA', type: 'color' },
+      { key: 'colorB', type: 'color' },
     ],
   },
 };

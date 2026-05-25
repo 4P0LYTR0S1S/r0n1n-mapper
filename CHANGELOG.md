@@ -2,6 +2,177 @@
 
 All notable changes to r0n1n-mapper. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning is [SemVer](https://semver.org/) with calver-style date stamps for pre-1.0 milestones.
 
+## Roadmap
+
+Forward-looking, subject to change. Order reflects current build sequence — each milestone unlocks the next.
+
+- **v0.6.1 — Cheap-wow shader pack.** Six trivial-complexity fragment-shader effects building on v0.6.0's onset/phrase clock: feedback FBO retention (foundational), kaleidoscope, shockwave ripple, ASCII/halftone post-pass, RGB channel shift on onset, scanline tear. Plus global strobe-on-snare and invert-on-drop hooks.
+- **v0.7.0 — Datamosh lookalike glitch stack.** Medium-complexity glitch effects layered on v0.6.1's feedback FBO + v0.6.0's onset: block displacement (8×8/16×16 macroblock jitter), motion-vector smear (the closest-to-real-datamosh signature), pseudo pixel-sort, DCT-block noise injection, hybrid datamosh shader. True WebCodecs P-frame datamoshing deferred to v0.8+ pending wider browser support — bitstream surgery has too much tail risk for live use.
+- **v0.7.x or v0.8.0 — Triple-output A/B/C surface routing.** Per-surface `outputTarget: 'A'|'B'|'C'|'all'` field; each output tab parses ID from URL hash (`output.html#A`) and filters surfaces. Multi-projector tiled-coverage rigs from one device. Mirror-mode + per-output recording fall out for free. Hardware caveat: 3× 1080p will thermal-throttle ARM iGPUs; recommend 720p × 3 for sustained use.
+- **Deferred to post-v0.8** (high-effort, high-wow): reaction-diffusion, stable-fluids, curl-noise particles, slit-scan time-warp, raymarched fractal tunnel, voxel-wall FFT skyline.
+
+## [Unreleased — v1.x candidate] — Native vdo.ninja WebRTC viewer (DEFERRED)
+
+Operator floated this as "be cool to..." territory. After scoping: a real
+native viewer needs WebRTC signaling against vdo.ninja's custom WSS protocol,
+TURN fallback, codec negotiation, reconnect logic, and ongoing maintenance
+as their protocol evolves. Estimated 3-5 days build + ongoing burden.
+
+**The OBS Virtual Camera pipe** (vdo.ninja → OBS Browser Source → OBS Virtual
+Camera → r0n1n-mapper webcam picker) delivers the same functional outcome
+with **zero r0n1n-mapper code** and **full vdo.ninja feature compatibility**.
+Trade-off: one extra app in the chain (OBS), ~110-280ms end-to-end latency.
+
+Comprehensive workflow doc shipped at `docs/VDO_NINJA_WORKFLOW.md`. Revisit
+native integration only if operator finds the OBS hop genuinely annoying
+during live use.
+
+## [0.9.0] — 2026-05-25
+
+**Beat-Locked Timeline (Lite) — MARQUEE.** Schedule snapshots by bar position, not seconds. Cursor advances at the BPM clock from the analyser; snapshots auto-apply as the cursor crosses their bar position. Loop region with phrase-aligned boundaries (4/8/16/32 bar) lets a single configured set run forever. The foundational architecture for music-first VJ work — the rest of v0.9.x and v1.0 expand from here.
+
+### Added
+
+- **`src/timeline/timeline.js`** — engine. Exports `createTimelineEngine({getState, getAudioTime, getBpm, getSnapshot, applySnapshot})`, `emptyTimeline()`, `emptyEvent(id, snapshotId, bar)`, `timeToBar(seconds, bpm)`.
+- **`state.timeline`** — `{ events: [{id, snapshotId, bar}], playing, currentBar, anchorAudioTime, anchorBar, loopStart, loopEnd, loopEnabled }`.
+- **Transport controls** in the editor sidebar — play ▶ / pause ‖ / stop ■ buttons + live cursor display (`bar 3.75 / 16 ▶`).
+- **Loop region inputs** — enable toggle + from/to bar inputs. Default `0..16` (4-phrase 4-bar loop). Cursor wraps at `loopEnd` back to `loopStart`; on wrap, events at start replay correctly (lastBar tracker resets).
+- **Event scheduling UI** — snapshot picker + bar number input + `+ at` button. Events render in a sorted list with a `×` delete control.
+- **Auto-anchor on play** — when `play()` is called, the engine snaps `anchorAudioTime` to "now" and `anchorBar` to the current cursor position so playback resumes smoothly from any seek.
+
+### Changed
+
+- **Schema bumped v9 → v10.** Migration adds empty `state.timeline` with default loop region `0..16`, `loopEnabled: true`.
+- **Editor frame loop calls `timelineEngine.tick()` every frame** after `applyMods` — modulation values are settled first, then timeline-triggered snapshot applies fire (so cued snapshot state overrides any base values from drag-while-modulating detection).
+
+### Architectural notes
+
+- **Tempo-locked playback requires a live BPM.** When BPM is 0 (no audio engaged, no MIDI clock, no tap-tempo set), `tick()` early-returns without advancing. Operator must engage audio + tap tempo (spacebar) OR receive MIDI Clock for the timeline to play.
+- **Event-fire tolerance is ±0.05 bars** (~75ms at 120 BPM 4/4). At 60 FPS the cursor advances ~0.008 bars/frame at 120 BPM, so any event between two frames is reliably caught by the lastBar/newBar crossing check.
+- **Deferred to v0.9.x / v1.0**: visual horizontal timeline lane (SVG with event markers + draggable cursor), drag-to-place events (click on lane to set bar), drag-to-resize event duration (for fade-cue timing), automation envelopes (continuous param curves, not just discrete snapshot triggers), multiple lanes per param, snap-to-grid quantization options, undo/redo, copy/paste regions, BPM-derived swing/shuffle. The current Lite UI is text-list-based which is functional for set programming but lacks the at-a-glance visual scrub of a proper DAW timeline.
+
+## [0.8.0] — 2026-05-25
+
+**Mod Matrix Lite — every slider becomes a reactive surface.** Operator can now bind any continuous parameter (layer opacity, dancer audioIntensity, shader-effect params, surface opacity, etc.) to a modulation source: one of 5 BPM-synced LFOs or one of 16 audio sources (5-band split + peak hold + onset + dropFlag + phrase clocks + legacy bands). Per-frame dispatcher writes `base + (source × depth)` into the bound param. Lite scope ships the foundation — Full Matrix (per-slider M button, mod stacking, more wave shapes) deferred to v0.8.x.
+
+### Added
+
+- **5 LFO sources** (`lfo:0` through `lfo:4`) with default config: sin @ 1/4, tri @ 1/2, saw @ 1bar, sqr @ 1/8, S+H @ 1/4. Per-LFO controls: wave shape (sin/tri/saw/sqr/sh), rate (BPM-synced 1/16 → 8bar), phase offset (0..1).
+- **16 audio sources** matching v0.6.0's analyser output: `audio:sub`, `audio:kick`, `audio:lowMid`, `audio:highMid`, `audio:air`, `audio:env`, `audio:peakKick`, `audio:peakAir`, `audio:onset`, `audio:dropFlag`, `audio:phrasePos`, `audio:barMod16`, `audio:beatMod4` (the last three normalized to 0..1 for predictable depth scaling), plus legacy `audio:bass`/`audio:mid`/`audio:high`.
+- **Per-binding fields**: `paramPath` (JSON-pointer-like string, e.g. `layers[2].audioIntensity`), `source`, `depth` (-2..2), `polarity` (`uni` = 0..depth, `bi` = -depth..depth), `enabled`, `baseValue` (captured at bind time, updated on operator drag).
+- **`src/mod/dispatcher.js`** — new module exporting `applyMods(state, audio)`, `evaluateSource`, `resolveParamPath`, `captureBaseValue`, `emptyMod`, `emptyLfos`. Per-frame dispatcher runs on both editor + output tabs (each tab evaluates locally at its own framerate — no broadcast spam).
+- **"modulators" sidebar section** with collapsible LFO config + bindings list + add-binding form. Each binding shows enable toggle, source picker, depth slider, polarity selector, delete button. New-binding form: param-path text input + source dropdown + add button.
+- **Operator-drag-while-modulating detection** — if the bound param's current value differs from what the dispatcher last wrote (float-tolerance 0.0001), assume the operator just dragged the slider and update `baseValue` accordingly. Modulation moves with the new base instead of fighting the operator.
+
+### Changed
+
+- **Schema bumped v8 → v9.** Migration adds empty `state.mods: []` + default `state.lfos` (5 LFOs from `emptyLfos()`). Old saved projects gain modulation infrastructure with zero behavior change.
+- **Both editor + output frame loops call `applyMods` before render.** Mutation is direct (bypasses store-emit pipeline since the store doesn't proxy nested object writes), so no broadcast or autosave storm at 60Hz. Cross-tab consistency relies on each tab using `baseValue` as the additive anchor — even after state:full sync replays a modulated snapshot, the next frame's `applyMods` overwrites with `baseValue + freshSource × depth`.
+
+### Architectural notes
+
+- **State churn at 60Hz is intentional and harmless** — only the *value* of layer.opacity etc. changes, not the store-emit pipeline. Autosave + broadcast only fire on explicit store mutations (add binding, edit binding, etc.), not on per-frame modulation.
+- **Deferred to v0.8.x (Full Matrix)**: per-slider "M" button for in-place binding, right-click quick menu, mod stacking (multiple sources adding into one param), modulation curves (lin/log/exp/step), output range remap, MIDI CC as first-class mod source (currently CC routes via the separate MIDI Learn dispatcher).
+
+## [0.7.1] — 2026-05-25
+
+**Triple-output A/B/C surface routing.** Multi-projector rigs from one device. Each output tab parses its ID from the URL hash and renders only surfaces routed to it (or to `all`). BroadcastChannel is already multi-consumer so no relay or new transport is needed.
+
+### Added
+
+- **`surface.outputTarget: 'all' | 'A' | 'B' | 'C'`** field per surface. Default `'all'` (renders on every output tab — preserves single-output behavior). `A`/`B`/`C` routes the surface only to the corresponding output tab.
+- **URL-hash output ID parsing in `main-output.js`**. `output.html#A` → `MY_OUTPUT_ID = 'A'`. No hash → `'all'` (renders everything, single-output flow unchanged). Document title becomes `Ronin Projection Mapper — output A` so operator can identify tabs in their taskbar.
+- **Per-surface output dropdown** in the surface-props panel — `all outputs` / `output A` / `output B` / `output C`.
+- **Three new `+ A` / `+ B` / `+ C` buttons** in the editor topbar next to `open output`. Each opens `output.html#<id>` in a new tab.
+- **HUD output-id indicator** on the output canvas — shows `all` for default or `→ A` etc. for routed outputs. Set via URL hash, not editable on the output tab.
+
+### Changed
+
+- **Schema bumped v7 → v8**. Migration backfills `outputTarget: 'all'` on every existing surface so old saved projects keep rendering on the default output identically.
+- **`main-output.js` frame loop** filters `state.surfaces` by `outputTarget` before calling `pipeline.render`. Layer runtimes themselves stay shared across all output instances — they're effectively a global render-resource pool.
+
+### Hardware caveat
+
+The Lenovo Chromebook Plus 14 ARM iGPU will thermal-throttle running three 1080p output tabs simultaneously. Practical recommendation: **720p × 3 for sustained use, 1080p × 3 for short bursts.** Mirror-mode use cases (3× same hash = redundant output for OBS-capture-while-projecting) cost roughly the same as a single high-res output since the same surface renders three times — operator should monitor thermals and frame rate.
+
+### Bonus side effects
+
+- **Mirror mode for free** — open three tabs all at `#A` (or all at default) and you get three independent canvases rendering the same content. Useful for OBS-capture-while-projecting, redundant outputs, or projector-plus-monitor previews.
+- **Per-output recording for free** — the existing `r` key on each output tab triggers its own MediaRecorder, so multi-projector rigs can record each projector's output to a separate webm.
+- **Per-output audio engagement for free** — each tab has its own `a` key audio toggle, so three outputs can either share one mic or each subscribe to a different audio source.
+
+## [0.7.0] — 2026-05-25
+
+**Datamosh-lookalike glitch stack + post-effect architecture.** New `+ post-fx` layer type processes the surface accumulator (everything composited below in z-order) through a shader, rather than generating its own content. Six glitch effects on launch — every one of them an audio-reactive in-shader version of techniques that traditionally need WebCodecs bitstream surgery (3-week build, Chrome-only, fragile under seek/loop). Lookalike pack ships in ~1 day/effect and works on any browser regl supports.
+
+### Added
+
+- **New layer type `post-shader`** (sentinel: `runtime.isPostEffect === true`). Compositor detects the flag and routes the accumulator through `runtime.apply(srcTex, dstFbo, w, h)` instead of doing a normal blend pass. Stack multiple post-fx layers on a surface for layered glitch (e.g. `rgb-shift` + `scanline-tear` + `block-displace` over a video).
+- **`+ post-fx` button + effect dropdown** in the editor topbar layer-add row. Effects populate from `POST_EFFECT_NAMES`; selecting a new effect re-initializes params to that effect's defaults.
+- **Six post-effect shaders** (`src/layers/shader-effects-post.js`):
+  - **`rgb-shift`** — three-channel chromatic aberration. Base offset + onset multiplier + dropFlag spike. The "VHS tracking issue" classic.
+  - **`scanline-tear`** — per-row hash-driven horizontal UV offset. Sparse rows torn by threshold gate; density and amplitude both pump on `u_onset`. Broken-signal aesthetic.
+  - **`block-displace`** — quantizes UVs to N×N grid, hashes each block → per-block UV offset. The macroblock-corruption signature look. Onset spikes amplitude; kick quantizes time-stepping so blocks "tick" on the beat.
+  - **`ascii`** — quantizes source brightness to procedural SDF characters (·, +, *, #) per cell. Cell size pumps on kick; contrast on onset; drop boosts contrast harder. Instant printed/terminal aesthetic identity.
+  - **`pixel-sort`** — per-row brightest-pixel propagation (single-pass approximation). Smear length scales with onset; threshold gates which pixels can "win" and propagate. Streaky/melty smear that beats musically.
+  - **`mv-smear`** — motion-vector smear (the datamosh hybrid). Combines feedback-style frame retention with block displacement: holds the previous frame, displaces it block-wise, mixes in the new frame at low alpha. Closest perceptual match to true datamosh — frozen frame with drifting macroblocks. Uses internal ping-pong + pass-through copy to maintain `u_prev`.
+- **`POST_EFFECTS` registry** with per-effect `defaultParams`, `schema`, and optional `feedback: true` flag. Mirror shape of generator `EFFECTS` registry so editor UI code stays uniform.
+- **Per-layer panel `buildPostShaderControls`** — effect picker, Audio Reactivity slider, dynamic param controls from schema, footer note explaining post-fx-affects-layers-below semantics.
+
+### Changed
+
+- **`src/render/compositor.js`** — compositor pass now branches on `runtime.isPostEffect`. Non-effect layers blend normally; effect layers run `apply()` against the accumulator. Same ping-pong FBO architecture as before (the post-effect output becomes the new accumulator via the existing acc/next swap).
+
+### Fixed
+
+- **mv-smear TDZ bug caught + fixed during initial smoke.** `let copyDraw = null;` and `function copyToPrev` had been declared AFTER the `return {}` statement, making the function reachable (declarations hoist) but the `copyDraw` binding permanently in temporal dead zone. Moved both declarations BEFORE return; mv-smear now runs cleanly through the compositor pass.
+
+### Architectural notes
+
+- **WebCodecs true-datamoshing deferred to v0.8+.** Bitstream surgery (orphaning P-frames, lying about chunk type) is rejected by spec-compliant decoders per w3c/webcodecs#867. Estimated ~3 weeks build with high tail risk (codec variance, seek/loop break-on-keyframe-restart, MP4-only). The shader lookalike pack here delivers ~80% of the perceptual look at ~1 day/effect, works on any regl-compatible browser, and stacks composably.
+- **Architecture is ready for v1.x post-effect expansion.** Any future post-effect (kaleidoscope-as-post, slit-scan-as-post, etc.) just needs a new entry in `POST_EFFECTS` — the layer type, runtime, compositor wiring, and UI are all in place.
+
+## [0.6.1] — 2026-05-25
+
+**Cheap-wow generator shader pack + feedback FBO infrastructure.** Four new fullscreen shader effects in `+ shader`, plus the foundational ping-pong FBO architecture in `shader-layer.js` that unlocks every "this frame depends on the last frame" shader from here on (trails, smear, shockwave, motion vectors, datamosh lookalikes). All four effects consume v0.6.0's new audio uniforms — onset, beatMod4, barMod16, phrasePos, dropFlag — so they feel rhythmically musical instead of just band-pulsed.
+
+### Added
+
+- **`feedback-trails`** effect — pure frame retention with fade decay. Each tick, the previous frame is sampled with a slight zoom + rotation + fade (configurable `decay`/`zoom`/`rotate` params), then a new fbm pattern is drawn on top driven by audio bands. Builds standing-wave patterns + Droste tunnels automatically. Bass momentarily pushes decay toward 1.0 ("freeze the moment" on kicks). Onset injects sparkles via `u_air`. Foundation effect: every other feedback-capable shader in v0.7.0+ leans on this same ping-pong pattern.
+- **`shockwave`** effect — concentric rings radiating from center. Three ring sources combined: phase-clock ring (always expanding), beat-aligned ring (snaps on each beat), and drop ring (triggered by `u_dropFlag`, big and slow). Onset triggers a brief full-screen flash. The most legible beat-sync effect we've shipped — reads as direct cause-and-effect with the music.
+- **`truchet`** effect — wall of randomly-rotated arc tiles forming continuous curves and mazes. Line thickness pulses on kick + onset; line color hue rotates per bar (driven by `u_barMod16`); drop inverts the color palette. Mathematically pristine, infinite without seams, projection-map-friendly on rectangular surfaces.
+- **`voronoi`** effect — plane fractures into cellular shards. Cells jitter outward on each `u_onset`, edge brightness pulses with kick, palette shifts every 2 bars via `u_phrasePos`. Glass-breaking read; cells let you map any source per-cell down the road.
+- **`hash22(vec2)`** helper added to the shared `NOISE` GLSL preamble so any future shader can use 2D vector hashes without inlining the definition.
+
+### Changed
+
+- **`shader-layer.js` now supports feedback ping-pong**. Effects with `meta.feedback === true` in the registry get TWO color textures + framebuffers that alternate as render-target / sample-source each frame, plus a `u_prev` sampler2D uniform pointing at the previous frame's color. Single-buffer effects work identically to before (zero overhead for non-feedback shaders). Compositor reads the just-rendered pair via a getter on `layer.texture` so the swap is invisible upstream.
+- **All shader effects now receive the full v0.6.0 audio uniform set**: legacy `u_bass`/`u_mid`/`u_high`/`u_env`/`u_beat`/`u_bpm` AND new `u_sub`/`u_kick`/`u_lowMid`/`u_highMid`/`u_air` AND peak-hold `u_peakKick`/`u_peakAir` AND rhythmic gates `u_onset`/`u_beatMod4`/`u_barMod16`/`u_phrasePos`/`u_dropFlag`. The COMMON GLSL preamble documents which uniforms come from which subsystem. Pre-v0.6.0 shaders continue to render identically (only the legacy uniforms are touched in their bodies).
+- **Per-layer `audioIntensity` no longer scales rhythmic gates.** `u_onset`, `u_beatMod4`, `u_barMod16`, `u_phrasePos`, `u_dropFlag` are rhythmic structure — scaling them down doesn't make sense (you don't want "half an onset"). Band envelopes (`u_bass`/etc) still scale by audioIntensity as before.
+
+## [0.6.0] — 2026-05-24
+
+**VJ-grade audio pipeline upgrade + title reveal fix.** The audio analyser becomes a real VJ-grade signal-extraction layer — five musically-tuned bands, asymmetric attack/release envelope follower, spectral-flux onset detection, a musical phrase clock, and a drop detector heuristic — without breaking any existing shader. Every audio-reactive layer (dancer, title, shader effects) immediately feels snappier under the new envelope, with the new uniforms available to upcoming glitch / triggering effects. Also bundles a fix for the title-layer reveal animation that only played once on layer attach.
+
+### Added
+
+- **5-band audio split** tuned for EDM/DnB content: `sub` (20-60 Hz, weight), `kick` (60-120 Hz, the thump), `lowMid` (120-500 Hz, bass body), `highMid` (2-4 kHz, snare/clap/vocal presence), `air` (8-16 kHz, hi-hat/cymbal sparkle). Bands are deliberately not contiguous — the gaps cover less musically distinct ranges.
+- **Asymmetric attack/release envelope per band** — replaces the old pure-exponential decay with `fast attack ≈ 0.6, slow release ≈ 0.05`. Kicks now HIT and sag instead of pulsing as a glow, which is the difference between "lighting reacts to music" and "lighting feels musical."
+- **Per-band peak-hold with slow decay** (`peakSub`, `peakKick`, `peakLowMid`, `peakHighMid`, `peakAir`). Useful for freeze-on-bright effects that want to retain the most recent transient color/intensity.
+- **Spectral-flux onset detection.** `flux = Σ max(0, fft[t][i] - fft[t-1][i])` thresholded against rolling mean + 1.5·stddev with a 70 ms refractory. Cleaner than bass-spike beat detection — picks snares, claps, and any transient, not just kicks. New uniform: `onset` (1 for one frame on each transient).
+- **Musical phrase clock** anchored on first valid BPM (or re-anchored when BPM shifts >1): `beatMod4` (0..4 continuous, floor = beat-in-bar), `barMod16` (0..16 continuous, floor = bar-in-phrase), `phrasePos` (0..1 ramp inside an 8-bar phrase). Unlocks "only every 4th beat", "hue rotates per bar", "blur ramps with phrase", and similar phrase-aware gating downstream.
+- **Drop detector** — 5-second RMS-history heuristic firing `dropFlag` (held for 800 ms) when sustained build (3s..0.8s ago `> 0.25`) is followed by a dip (0.8s..0.3s ago `< build × 0.3`) followed by an onset-driven reattack. 2-second cooldown between drops.
+- **`window.__r0n1n_audio` exposure on the output tab** (already present on the editor) for DevTools inspection of the new uniforms during live performance.
+
+### Fixed
+
+- **Title layer reveal animation only played once on attach.** The `startTime` anchor was set at `attachTitle` time and never reset, so subsequent text/font/reveal-mode edits showed the reveal as already complete. The reveal clock now resets on any bake-signature change (text/font/fontSize) or `revealMode` switch, so editing the text mid-set re-plays the reveal naturally.
+
+### Changed
+
+- **Existing `bass` / `mid` / `high` uniforms now feel snappier.** Same band definitions (BT.709-ish 40-250 / 250-2k / 2k-8k Hz) and same per-frame API, but they now pass through the asymmetric envelope instead of pure decay. Existing dancer / title / shader-effect layers automatically inherit the punchier feel without any per-layer changes.
+- **Backward compatibility preserved.** `bass`, `mid`, `high`, `env`, `beat`, `bpm`, `fftBins`, `time` remain in the returned uniforms object with their established semantics. Shaders written pre-v0.6.0 continue to render identically (modulo the deliberate envelope-feel change). New uniforms are additive.
+
 ## [0.5.0] — 2026-05-23
 
 **Complex body + procedural sample.** The dancer-img layer gains a 14-part anatomical rig (head, torso, upper arm / forearm / hand × 2, thigh / shin / foot × 2) where each segment is its own uploaded sprite — no bend-math compromise, each piece rotates around its own joint anchor. A `✦ generate sample` button procedurally draws a stylized neon cyberpunk body to IDB so the rig comes alive immediately without uploads. The simple 6-part path remains as default; complex mode is an opt-in toggle.

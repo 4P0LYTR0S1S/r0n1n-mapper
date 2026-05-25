@@ -79,8 +79,20 @@ export function createCompositor(regl, fboPool) {
     for (const layer of layerRecords) {
       if (!layer || !layer.enabled) continue;
       const rt = layerRuntimes.get(layer.id);
-      if (!rt || !rt.texture) continue;
+      if (!rt) continue;
       rt.tick?.();
+
+      // v0.7.0 — post-effect layers operate on the accumulator instead of
+      // blending in their own texture. They write the transformed result
+      // into `next`; we then swap roles so the post-effect output IS the
+      // new accumulator for the next layer up the stack.
+      if (rt.isPostEffect) {
+        rt.apply(acc.color[0], next, w, h);
+        const tmp = acc; acc = next; next = tmp;
+        continue;
+      }
+
+      if (!rt.texture) continue;
 
       const key = layer.key ?? { mode: 'none' };
       regl({ framebuffer: next, viewport: { x: 0, y: 0, width: w, height: h } })(() => {
